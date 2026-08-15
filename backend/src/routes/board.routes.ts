@@ -107,7 +107,7 @@ boardRouter.get("/:id", (req, res) => {
 boardRouter.post("/", requireAuth, (req: AuthedRequest, res) => {
   const parsed = postSchema.safeParse(req.body);
   if (!parsed.success) {
-    const msg = parsed.error.errors[0]?.message || "Invalid data";
+    const msg = parsed.error.issues[0]?.message || "Invalid data";
     return res.status(400).json({ error: msg });
   }
 

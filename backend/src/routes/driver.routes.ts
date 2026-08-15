@@ -477,7 +477,7 @@ driverRouter.patch("/rates", requireAuth, (req: AuthedRequest, res) => {
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    const msg = parsed.error.errors[0]?.message || "Invalid rate";
+    const msg = parsed.error.issues[0]?.message || "Invalid rate";
     return res.status(400).json({ error: msg });
   }
 
