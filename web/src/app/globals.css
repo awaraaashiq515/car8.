@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Google Fonts (via CDN) ─────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    'JetBrains Mono', 'SFMono-Regular', monospace;
+
+  --navy-deep:    #050D1A;
+  --navy-card:    #0D1B2E;
+  --navy-border:  #1A2E45;
+  --blue-primary: #2563EB;
+  --cyan-glow:    #06B6D4;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--navy-deep);
+  color: #F0F6FF;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(37, 99, 235, 0.5);
+  color: #F0F6FF;
+}
+
+/* ─── Scrollbar ──────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #080F1D; }
+::-webkit-scrollbar-thumb { background: #1A2E45; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2563EB; }
+
+/* ─── Component Utilities ────────────────────────── */
+@layer components {
+
+  /* Gradient Button (blue → cyan, exact screenshot match) */
+  .btn-gradient {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 font-display font-semibold text-white transition-all duration-200;
+    background: linear-gradient(135deg, #2563EB 0%, #06B6D4 100%);
+    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+  }
+  .btn-gradient:hover {
+    background: linear-gradient(135deg, #1D4ED8 0%, #0891B2 100%);
+    box-shadow: 0 6px 28px rgba(37, 99, 235, 0.45);
+    transform: translateY(-1px);
+  }
+  .btn-gradient:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 12px rgba(37, 99, 235, 0.3);
+  }
+  .btn-gradient:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Ghost / Secondary Button */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-navy-border px-5 py-2.5 font-body text-sm font-medium text-muted transition-all duration-200;
+  }
+  .btn-ghost:hover {
+    @apply border-blue-primary/50 text-white bg-navy-hover;
+  }
+
+  /* Card */
+  .card {
+    @apply rounded-2xl border border-navy-border bg-navy-card p-5;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  }
+  .card:hover {
+    border-color: rgba(37, 99, 235, 0.3);
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(37,99,235,0.15);
+  }
+
+  /* Input */
+  .input {
+    @apply w-full rounded-xl border border-navy-border bg-navy-deep px-4 py-3 text-sm text-white outline-none placeholder:text-dimmed transition-all duration-200;
+  }
+  .input:focus {
+    @apply border-blue-primary;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+
+  /* Status Badge */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider font-medium;
+  }
+  .badge-green  { @apply badge bg-green/10 text-green border border-green/20; }
+  .badge-blue   { @apply badge bg-blue-primary/10 text-blue-light border border-blue-primary/20; }
+  .badge-amber  { @apply badge bg-amber/10 text-amber border border-amber/20; }
+  .badge-red    { @apply badge bg-red/10 text-red border border-red/20; }
+  .badge-muted  { @apply badge bg-navy-border/50 text-muted border border-navy-border; }
+
+  /* Nav */
+  .nav-link {
+    @apply flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors duration-150;
+  }
+  .nav-link:hover { @apply bg-navy-hover text-white; }
+  .nav-link.active { @apply bg-blue-primary/15 text-blue-light; }
+
+  /* Glow dot (online indicator) */
+  .dot-online {
+    @apply h-2.5 w-2.5 rounded-full bg-green;
+    box-shadow: 0 0 8px rgba(16,185,129,0.7);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  .dot-offline {
+    @apply h-2.5 w-2.5 rounded-full bg-red;
+  }
+}
+
+/* ─── Gradient Text ──────────────────────────────── */
+.text-gradient {
+  background: linear-gradient(135deg, #60A5FA 0%, #22D3EE 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Glow Background Blob ───────────────────────── */
+.hero-glow {
+  position: absolute;
+  width: 600px;
+  height: 300px;
+  background: radial-gradient(ellipse, rgba(37,99,235,0.15) 0%, transparent 70%);
+  pointer-events: none;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* ─── Scrollbar hide ─────────────────────────────── */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Offline dot ────────────────────────────────── */
+.dot-offline {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6B7280;
+}
+
+/* ─── Premium range slider (rate page) ──────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2563EB, #06B6D4);
+  border: 2px solid rgba(255,255,255,0.15);
+  box-shadow: 0 0 12px rgba(37,99,235,0.5);
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.1s;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 18px rgba(37,99,235,0.7);
+  transform: scale(1.1);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2563EB, #06B6D4);
+  border: 2px solid rgba(255,255,255,0.15);
+  box-shadow: 0 0 12px rgba(37,99,235,0.5);
+  cursor: pointer;
+}
+

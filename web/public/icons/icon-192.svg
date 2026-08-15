@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A1628"/>
+      <stop offset="100%" stop-color="#111D35"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="url(#bg)"/>
+  <!-- Car body -->
+  <path d="M40 120 L50 90 Q55 80 65 80 L127 80 Q137 80 142 90 L152 120 Z" fill="url(#accent)" opacity="0.9"/>
+  <rect x="35" y="115" width="122" height="25" rx="8" fill="url(#accent)"/>
+  <!-- Windows -->
+  <path d="M58 90 L65 82 L95 82 L95 105 L55 105 Z" fill="#0A1628" opacity="0.6"/>
+  <path d="M100 82 L127 82 L134 90 L137 105 L100 105 Z" fill="#0A1628" opacity="0.6"/>
+  <!-- Wheels -->
+  <circle cx="65" cy="140" r="12" fill="#0A1628"/>
+  <circle cx="65" cy="140" r="6" fill="#334155"/>
+  <circle cx="127" cy="140" r="12" fill="#0A1628"/>
+  <circle cx="127" cy="140" r="6" fill="#334155"/>
+  <!-- Headlights -->
+  <rect x="148" y="118" width="8" height="6" rx="2" fill="#FBBF24"/>
+  <rect x="36" y="118" width="8" height="6" rx="2" fill="#EF4444"/>
+  <!-- Text "8" -->
+  <text x="96" y="68" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="36" font-weight="900" fill="url(#accent)">8</text>
+</svg>

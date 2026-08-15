@@ -1,0 +1,10 @@
+{
+  "appId": "in.cab8.customer",
+  "appName": "Cab8",
+  "webDir": "out",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://cab8.in",
+    "cleartext": true
+  }
+}

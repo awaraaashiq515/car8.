@@ -1,0 +1,323 @@
+import { Router } from "express";
+import { z } from "zod";
+import { nanoid } from "nanoid";
+import { db } from "../lib/db";
+import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { distanceKm, estimateFare, VehicleType, RideType, CITY_COORDS } from "../services/fare";
+
+export const ridesRouter = Router();
+
+const searchSchema = z.object({
+  pickupText: z.string(),
+  pickupLat: z.number(),
+  pickupLng: z.number(),
+  dropText: z.string(),
+  dropLat: z.number(),
+  dropLng: z.number(),
+  vehicleType: z.enum(["HATCHBACK", "SEDAN", "SUV", "LUXURY"]),
+  rideType: z.enum(["LOCAL", "OUTSTATION", "AIRPORT", "HOURLY"]),
+});
+
+/**
+ * POST /rides/search
+ * Returns the trip distance/fare estimate plus the nearest available,
+ * verified drivers matching the requested vehicle type — this powers the
+ * results screen before the customer confirms a booking.
+ */
+ridesRouter.post("/search", (req, res) => {
+  const parsed = searchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const q = parsed.data;
+  const tripKm = distanceKm(q.pickupLat, q.pickupLng, q.dropLat, q.dropLng);
+
+  const drivers = db
+    .prepare(
+      `SELECT dp.id, dp.city, dp.vehicle_type, dp.vehicle_number, dp.rating_avg,
+              dp.rate_per_km, dp.current_lat, dp.current_lng, u.name
+       FROM driver_profiles dp
+       JOIN users u ON u.id = dp.user_id
+       WHERE dp.is_online = 1 AND dp.is_verified = 1 AND dp.vehicle_type = ?`
+    )
+    .all(q.vehicleType) as any[];
+
+  const results = drivers
+    .map((d) => {
+      const driverCoords = CITY_COORDS[d.city];
+      const driverLat = (d.current_lat && d.current_lat !== 0) ? d.current_lat : (driverCoords?.lat || q.pickupLat);
+      const driverLng = (d.current_lng && d.current_lng !== 0) ? d.current_lng : (driverCoords?.lng || q.pickupLng);
+
+      const pickupDistanceKm = distanceKm(
+        q.pickupLat,
+        q.pickupLng,
+        driverLat,
+        driverLng
+      );
+      const fare = estimateFare(
+        tripKm,
+        q.vehicleType as VehicleType,
+        q.rideType as RideType,
+        d.rate_per_km
+      );
+      const etaMinutes = Math.max(2, Math.round(pickupDistanceKm * 2.5));
+      return {
+        driverId: d.id,
+        driverName: d.name,
+        city: d.city,
+        vehicleType: d.vehicle_type,
+        vehicleNumber: d.vehicle_number,
+        vehicleMake: d.vehicle_make,
+        vehicleModel: d.vehicle_model,
+        avatarPhoto: d.avatar_photo,
+        ratingAvg: d.rating_avg,
+        totalReviews: d.total_reviews || 0,
+        pickupDistanceKm,
+        etaMinutes,
+        fare,
+      };
+    })
+    .sort((a, b) => {
+      // Primary sort: Drivers whose registered city matches pickup location come first
+      const aMatch = q.pickupText.toLowerCase().includes(a.city.toLowerCase()) ? 0 : 1;
+      const bMatch = q.pickupText.toLowerCase().includes(b.city.toLowerCase()) ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      return a.pickupDistanceKm - b.pickupDistanceKm;
+    })
+    .slice(0, 10);
+
+  return res.json({
+    tripDistanceKm: tripKm,
+    baseFareEstimate: estimateFare(tripKm, q.vehicleType as VehicleType, q.rideType as RideType),
+    drivers: results,
+  });
+});
+
+const bookSchema = searchSchema.extend({
+  driverId: z.string().optional(),
+  scheduledAt: z.string().datetime().optional(),
+});
+
+/**
+ * POST /rides
+ * Creates a booking. If a driverId is supplied (customer picked one from the
+ * search results) the ride goes straight to DRIVER_ASSIGNED; otherwise it's
+ * left SEARCHING for the dispatch/matching flow to pick up.
+ */
+ridesRouter.post("/", requireAuth, (req: AuthedRequest, res) => {
+  const parsed = bookSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const b = parsed.data;
+  const tripKm = distanceKm(b.pickupLat, b.pickupLng, b.dropLat, b.dropLng);
+
+  let driverRate: number | undefined;
+  const status = "SEARCHING";
+  if (b.driverId) {
+    const driver = db
+      .prepare("SELECT * FROM driver_profiles WHERE id = ?")
+      .get(b.driverId) as any;
+    if (!driver) return res.status(404).json({ error: "Driver not found" });
+    driverRate = driver.rate_per_km;
+  }
+
+  const fare = estimateFare(tripKm, b.vehicleType as VehicleType, b.rideType as RideType, driverRate);
+  const id = nanoid();
+  const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+  db.prepare(
+    `INSERT INTO rides
+      (id, customer_id, driver_id, ride_type, vehicle_type, pickup_text, pickup_lat, pickup_lng,
+       drop_text, drop_lat, drop_lng, scheduled_at, distance_km, estimated_fare, status, start_otp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    req.userId,
+    b.driverId || null,
+    b.rideType,
+    b.vehicleType,
+    b.pickupText,
+    b.pickupLat,
+    b.pickupLng,
+    b.dropText,
+    b.dropLat,
+    b.dropLng,
+    b.scheduledAt || null,
+    tripKm,
+    fare,
+    status,
+    startOtp
+  );
+
+  const ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(id);
+  return res.status(201).json(ride);
+});
+
+/** GET /rides/:id — trip status/tracking screen polls this. */
+ridesRouter.get("/:id", requireAuth, (req: AuthedRequest, res) => {
+  let ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id) as any;
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.customer_id !== req.userId) {
+    return res.status(403).json({ error: "Not your ride" });
+  }
+
+  // Ensure start_otp exists
+  if (!ride.start_otp) {
+    const newOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    db.prepare("UPDATE rides SET start_otp = ? WHERE id = ?").run(newOtp, ride.id);
+    ride.start_otp = newOtp;
+  }
+
+  // Fetch driver profile details if assigned
+  let driverInfo: any = null;
+  if (ride.driver_id) {
+    const dProf = db.prepare("SELECT * FROM driver_profiles WHERE id = ?").get(ride.driver_id) as any;
+    if (dProf) {
+      const dUser = db.prepare("SELECT name, phone FROM users WHERE id = ?").get(dProf.user_id) as any;
+      driverInfo = {
+        id: dProf.id,
+        name: dUser?.name || "Verified Driver",
+        phone: dUser?.phone || "",
+        city: dProf.city,
+        vehicle_type: dProf.vehicle_type,
+        vehicle_number: dProf.vehicle_number,
+        rating_avg: dProf.rating_avg,
+        total_reviews: dProf.total_reviews || 0,
+        vehicle_make: dProf.vehicle_make,
+        vehicle_model: dProf.vehicle_model,
+        avatar_photo: dProf.avatar_photo,
+      };
+    }
+  }
+
+  // Fetch existing review if submitted
+  const review = db.prepare("SELECT * FROM driver_reviews WHERE ride_id = ?").get(ride.id) as any;
+
+  return res.json({
+    ...ride,
+    driver: driverInfo,
+    review: review
+      ? {
+          ...review,
+          tags: JSON.parse(review.tags_json || "[]"),
+        }
+      : null,
+  });
+});
+
+/** POST /rides/:id/rate — customer rates driver after trip completion */
+const rateSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().optional().nullable(),
+  tags: z.array(z.string()).optional(),
+  tipAmount: z.number().min(0).optional(),
+});
+
+ridesRouter.post("/:id/rate", requireAuth, (req: AuthedRequest, res) => {
+  const parsed = rateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id) as any;
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.customer_id !== req.userId) {
+    return res.status(403).json({ error: "Not authorized to rate this ride" });
+  }
+  if (!ride.driver_id) {
+    return res.status(400).json({ error: "No driver was assigned to this ride" });
+  }
+
+  const customer = db.prepare("SELECT name FROM users WHERE id = ?").get(req.userId) as any;
+  const customerName = customer?.name || "Customer";
+
+  const { rating, comment, tags = [], tipAmount = 0 } = parsed.data;
+
+  // Check if already rated
+  const existing = db.prepare("SELECT id FROM driver_reviews WHERE ride_id = ?").get(ride.id) as any;
+  const reviewId = existing?.id || nanoid();
+
+  if (existing) {
+    db.prepare(`
+      UPDATE driver_reviews
+      SET rating = ?, comment = ?, tags_json = ?, tip_amount = ?, created_at = datetime('now')
+      WHERE id = ?
+    `).run(rating, comment || null, JSON.stringify(tags), tipAmount, reviewId);
+  } else {
+    db.prepare(`
+      INSERT INTO driver_reviews (id, ride_id, driver_id, customer_id, customer_name, rating, comment, tags_json, tip_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      reviewId,
+      ride.id,
+      ride.driver_id,
+      req.userId,
+      customerName,
+      rating,
+      comment || null,
+      JSON.stringify(tags),
+      tipAmount
+    );
+  }
+
+  // Recalculate driver's rating_avg and total_reviews
+  const stats = db
+    .prepare("SELECT AVG(rating) as avg_rating, COUNT(*) as count FROM driver_reviews WHERE driver_id = ?")
+    .get(ride.driver_id) as any;
+
+  const newRatingAvg = stats && stats.count > 0 ? Math.round(stats.avg_rating * 10) / 10 : rating;
+  const totalReviews = stats?.count || 1;
+
+  db.prepare("UPDATE driver_profiles SET rating_avg = ?, total_reviews = ? WHERE id = ?").run(
+    newRatingAvg,
+    totalReviews,
+    ride.driver_id
+  );
+
+  return res.json({
+    ok: true,
+    message: "Thank you! Driver rating submitted successfully.",
+    newRatingAvg,
+    totalReviews,
+    review: {
+      id: reviewId,
+      rating,
+      comment,
+      tags,
+      tipAmount,
+      customerName,
+    },
+  });
+});
+
+/** GET /rides — a customer's own booking history. */
+ridesRouter.get("/", requireAuth, (req: AuthedRequest, res) => {
+  const rides = db
+    .prepare("SELECT * FROM rides WHERE customer_id = ? ORDER BY created_at DESC")
+    .all(req.userId);
+  return res.json(rides);
+});
+
+const statusSchema = z.object({
+  status: z.enum(["CONFIRMED", "DRIVER_ASSIGNED", "ARRIVED", "ONGOING", "COMPLETED", "CANCELLED"]),
+});
+
+/**
+ * PATCH /rides/:id/status — advances the trip through its lifecycle.
+ */
+ridesRouter.patch("/:id/status", requireAuth, (req: AuthedRequest, res) => {
+  const parsed = statusSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid status" });
+
+  const ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id) as any;
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+  if (ride.customer_id !== req.userId) return res.status(403).json({ error: "Not your ride" });
+
+  db.prepare("UPDATE rides SET status = ?, updated_at = datetime('now') WHERE id = ?").run(
+    parsed.data.status,
+    req.params.id
+  );
+  const updated = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id);
+  return res.json(updated);
+});
