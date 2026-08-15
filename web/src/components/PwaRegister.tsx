@@ -91,14 +91,7 @@ export default function PwaRegister() {
         </div>
       )}
 
-      {/* Floating Download Hub Button if not in standalone */}
-      <Link
-        href="/download"
-        className="fixed top-3 right-3 z-40 bg-navy-card/90 backdrop-blur-md border border-cyan-500/40 text-cyan-300 hover:text-white px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 shadow-lg hover:border-cyan-400 transition"
-      >
-        <span>📲</span>
-        <span>Download App</span>
-      </Link>
+      {/* Floating banner for prompt if available */}
     </>
   );
 }
