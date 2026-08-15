@@ -26,6 +26,6 @@ app.use("/api/union",   unionRouter);
 app.use((req, res) => res.status(404).json({ error: `No route for ${req.method} ${req.path}` }));
 
 const PORT = Number(process.env.PORT) || 4000;
-app.listen(PORT, () => {
-  console.log(`Cab8 backend listening on http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Cab8 backend listening on port ${PORT}`);
 });
