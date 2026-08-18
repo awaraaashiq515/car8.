@@ -89,11 +89,18 @@ function getViaStopsForRoute(pText: string, dText: string, pLat: number, pLng: n
   }
 
   // Sarkaghat <-> Mandi
-  if ((p.includes("sarkaghat") && d.includes("mandi")) || (d.includes("sarkaghat") && p.includes("mandi"))) {
+  if (p.includes("sarkaghat") && d.includes("mandi")) {
     return [
       { name: "Kanyana Chowk", lat: 31.6850, lng: 76.7410, icon: "🚏", desc: "Sarkaghat Road" },
       { name: "Baldwara Tehsil", lat: 31.6321, lng: 76.7215, icon: "🏘️", desc: "Midpoint Town" },
       { name: "Rewalsar Bypass", lat: 31.6500, lng: 76.8500, icon: "🌲", desc: "Hill Pass" },
+    ];
+  }
+  if (p.includes("mandi") && d.includes("sarkaghat")) {
+    return [
+      { name: "Rewalsar Bypass", lat: 31.6500, lng: 76.8500, icon: "🌲", desc: "Hill Pass" },
+      { name: "Baldwara Tehsil", lat: 31.6321, lng: 76.7215, icon: "🏘️", desc: "Midpoint Town" },
+      { name: "Kanyana Chowk", lat: 31.6850, lng: 76.7410, icon: "🚏", desc: "Sarkaghat Road" },
     ];
   }
 
@@ -171,26 +178,41 @@ export default function RideMap({
   const [routeMins, setRouteMins] = useState<number | null>(null);
   const [viaStopsList, setViaStopsList] = useState<ViaStop[]>([]);
 
-  // Load Leaflet JS & CSS dynamically
+  // Load Leaflet JS & CSS dynamically with robust checking
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if ((window as any).L) {
-      setLeafletLoaded(true);
-      return;
+    const checkL = () => {
+      if ((window as any).L) {
+        setLeafletLoaded(true);
+        return true;
+      }
+      return false;
+    };
+
+    if (checkL()) return;
+
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
     }
 
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(link);
+    if (!document.getElementById("leaflet-js")) {
+      const script = document.createElement("script");
+      script.id = "leaflet-js";
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.onload = () => setLeafletLoaded(true);
+      document.head.appendChild(script);
+    }
 
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.onload = () => {
-      setLeafletLoaded(true);
-    };
-    document.head.appendChild(script);
+    const iv = setInterval(() => {
+      if (checkL()) clearInterval(iv);
+    }, 150);
+
+    return () => clearInterval(iv);
   }, []);
 
   // Update TileLayer when style changes
@@ -211,7 +233,11 @@ export default function RideMap({
       keepBuffer: 8,
       crossOrigin: true,
     }).addTo(map);
-  }, [leafletLoaded, currentStyle]);
+
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+  }, [leafletLoaded, currentStyle, height]);
 
   // Main Map rendering & Route calculation
   useEffect(() => {
@@ -342,7 +368,6 @@ export default function RideMap({
     // 🛣️ 5. Draw Main Highway Trip Route (Pickup -> Dropoff)
     const initialTripCoords: [number, number][] = [
       [pLat, pLng],
-      ...stops.map((s) => [s.lat, s.lng] as [number, number]),
       [dLat, dLng],
     ];
 
@@ -373,10 +398,8 @@ export default function RideMap({
       }).addTo(map);
     }
 
-    // 🌐 7. Fetch Real Highway Road Geometry from OSRM Driving Engine
-    // Construct via coordinates string
-    const coordString = `${pLng},${pLat};` + stops.map((s) => `${s.lng},${s.lat}`).join(";") + (stops.length ? ";" : "") + `${dLng},${dLat}`;
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson&steps=true`;
+    // 🌐 7. Fetch Real Highway Road Geometry from OSRM Driving Engine (Direct Pickup -> Dropoff)
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pLng},${pLat};${dLng},${dLat}?overview=full&geometries=geojson&steps=true`;
 
     fetch(osrmUrl)
       .then((res) => res.json())

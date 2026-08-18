@@ -72,6 +72,8 @@ export interface Ride {
     avatar_photo?: string | null;
     vehicle_make?: string | null;
     vehicle_model?: string | null;
+    current_lat?: number | null;
+    current_lng?: number | null;
   } | null;
   review?: DriverReview | null;
 }
@@ -184,6 +186,7 @@ export function clearDriverToken() {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API_URL}${path}`, {
+    cache: "no-store",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -235,6 +238,7 @@ export const api = {
     driverId: string;
   }) => request<Ride>("/rides", { method: "POST", body: JSON.stringify(payload) }),
   getRide: (id: string) => request<Ride>(`/rides/${id}`),
+  getPublicTrack: (id: string) => request<Ride>(`/rides/${id}/public-track`),
   updateRideStatus: (id: string, status: RideStatus) =>
     request<Ride>(`/rides/${id}/status`, {
       method: "PATCH",
@@ -255,12 +259,29 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMyRides: () => request<Ride[]>("/rides"),
+  getMessages: (rideId: string) => request<RideMessage[]>(`/rides/${rideId}/messages`),
+  sendMessage: (rideId: string, text: string) =>
+    request<RideMessage>(`/rides/${rideId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
 };
+
+export interface RideMessage {
+  id: string;
+  ride_id: string;
+  sender_id: string;
+  sender_role: "CUSTOMER" | "DRIVER";
+  sender_name: string;
+  text: string;
+  created_at: string;
+}
 
 /** Driver portal API — uses driver JWT token */
 async function driverRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getDriverToken();
   const res = await fetch(`${API_URL}${path}`, {
+    cache: "no-store",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -320,6 +341,12 @@ export const driverApi = {
     driverRequest<DriverProfile>("/driver/profile", {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+  getMessages: (rideId: string) => driverRequest<RideMessage[]>(`/rides/${rideId}/messages`),
+  sendMessage: (rideId: string, text: string) =>
+    driverRequest<RideMessage>(`/rides/${rideId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
     }),
 };
 

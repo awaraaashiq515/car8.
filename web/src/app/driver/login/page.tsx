@@ -172,12 +172,7 @@ export default function DriverLoginPage() {
           )}
         </div>
 
-        {/* Demo hint */}
-        <div className="mt-4 rounded-xl border border-navy-border bg-navy-card p-4">
-          <p className="text-xs text-muted text-center">
-            💡 <strong className="text-white">Demo drivers:</strong> 9800000001 · 9800000002 · 9800000003
-          </p>
-        </div>
+
 
         <p className="text-center text-sm text-muted mt-5">
           New driver?{" "}

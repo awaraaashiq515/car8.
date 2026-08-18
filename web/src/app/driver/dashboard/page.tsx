@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { driverApi, clearDriverToken, DriverProfile, Ride } from "@/lib/api";
+import { startDriverRideAlert, stopDriverRideAlert, unlockAudio } from "@/lib/sound";
 import DriverBottomNav from "@/components/DriverBottomNav";
 import RideMap from "@/components/RideMap";
 import TripSettlementModal from "@/components/TripSettlementModal";
+import RideChatDrawer from "@/components/RideChatDrawer";
 
 const STATUS_LABEL: Record<string, string> = {
   SEARCHING:       "Waiting for customer",
@@ -26,31 +28,8 @@ function RideStatusBadge({ status }: { status: string }) {
   return <span className={`badge ${map[status] ?? "badge-muted"}`}>{STATUS_LABEL[status] ?? status}</span>;
 }
 
-/** Animated countdown ring for incoming ride (15 seconds) */
-function CountdownRing({ seconds, total = 15 }: { seconds: number; total?: number }) {
-  const r    = 18;
-  const circ = 2 * Math.PI * r;
-  const prog = (seconds / total) * circ;
-  const color = seconds > 8 ? "#10B981" : seconds > 4 ? "#F59E0B" : "#EF4444";
-  return (
-    <svg width="50" height="50" viewBox="0 0 50 50" className="flex-shrink-0">
-      <circle cx="25" cy="25" r={r} fill="none" stroke="#1A2E45" strokeWidth="4" />
-      <circle
-        cx="25" cy="25" r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="4"
-        strokeDasharray={`${prog} ${circ}`}
-        strokeLinecap="round"
-        transform="rotate(-90 25 25)"
-        style={{ transition: "stroke-dasharray 0.8s linear, stroke 0.3s" }}
-      />
-      <text x="25" y="30" textAnchor="middle" fill={color} fontSize="13" fontWeight="bold">{seconds}</text>
-    </svg>
-  );
-}
 
-/** Full-screen incoming ride popup */
+/** Full-screen incoming ride popup — stays until driver accepts or rejects */
 function IncomingRideModal({
   ride,
   onAccept,
@@ -60,67 +39,199 @@ function IncomingRideModal({
   onAccept: () => void;
   onReject: () => void;
 }) {
-  const [secs, setSecs] = useState(15);
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
 
+  // Play continuous incoming ride alert sound & vibration until action taken
   useEffect(() => {
-    if (secs <= 0) { onReject(); return; }
-    const t = setTimeout(() => setSecs((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [secs, onReject]);
+    if (!isMuted) {
+      startDriverRideAlert();
+    } else {
+      stopDriverRideAlert();
+    }
+    return () => {
+      stopDriverRideAlert();
+    };
+  }, [isMuted]);
+
+  const handleModalAccept = () => {
+    stopDriverRideAlert();
+    onAccept();
+  };
+
+  const handleModalReject = () => {
+    stopDriverRideAlert();
+    onReject();
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm">
+    <>
+    <div
+      onClick={() => unlockAudio()}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto animate-fade-in"
+    >
       <div
-        className="w-full max-w-md mx-4 mb-4 sm:mb-0 card border-blue-primary/50 animate-fade-up"
-        style={{ boxShadow: "0 0 40px rgba(37,99,235,0.3)" }}
+        className={`w-full ${isMapExpanded ? "max-w-2xl h-[90vh]" : "max-w-lg"} rounded-3xl bg-[#0D182E] border border-cyan-400/40 shadow-2xl overflow-hidden my-auto flex flex-col transition-all duration-300 animate-fade-up`}
+        style={{ boxShadow: "0 0 50px rgba(6,182,212,0.3)" }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="font-display text-xl font-bold text-white">🚨 New Ride Request!</h2>
-            <p className="text-xs text-muted">Auto-rejects in {secs}s</p>
+        <div className="bg-gradient-to-r from-blue-900/50 via-cyan-900/30 to-blue-900/50 border-b border-navy-border px-5 py-3.5 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl animate-bounce">🚨</span>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white leading-tight">New Ride Request!</h2>
+              <p className="text-[11px] text-cyan-300 font-mono">Review route and destination</p>
+            </div>
           </div>
-          <CountdownRing seconds={secs} />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsMuted(!isMuted)}
+              title={isMuted ? "Unmute alert sound" : "Mute alert sound"}
+              className={`text-xs font-mono font-bold rounded-xl px-2.5 py-1.5 transition-all flex items-center gap-1 border ${
+                isMuted
+                  ? "text-muted bg-navy-card/60 border-navy-border hover:text-white"
+                  : "text-amber-300 bg-amber-500/20 border-amber-400/50 animate-pulse hover:bg-amber-500/30"
+              }`}
+            >
+              <span>{isMuted ? "🔇" : "🔔"}</span>
+              <span>{isMuted ? "Muted" : "Ringing"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowChat(true)}
+              className="text-xs font-mono font-bold text-cyan-300 bg-cyan-500/15 border border-cyan-400/40 rounded-xl px-2.5 py-1.5 hover:bg-cyan-500/25 transition-all flex items-center gap-1"
+            >
+              <span>💬</span>
+              <span>Chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsMapExpanded(!isMapExpanded)}
+              className="text-xs font-mono font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 rounded-xl px-2.5 py-1.5 hover:bg-cyan-500/20 transition-all flex items-center gap-1"
+            >
+              <span>{isMapExpanded ? "🗗" : "⛶"}</span>
+              <span>{isMapExpanded ? "Mini" : "Full"}</span>
+            </button>
+            {/* Pulsing LIVE badge — replaces countdown timer */}
+            <span
+              className="text-[10px] font-mono font-bold text-white px-2.5 py-1.5 rounded-xl flex items-center gap-1 animate-pulse"
+              style={{
+                background: "linear-gradient(135deg, #EF4444, #F97316)",
+                boxShadow: "0 0 14px rgba(239,68,68,0.5)",
+              }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-white inline-block" />
+              LIVE
+            </span>
+          </div>
         </div>
 
-        {/* Route */}
-        <div className="rounded-xl bg-navy-deep border border-navy-border p-4 mb-4">
-          <div className="flex items-start gap-3">
-            <div className="flex flex-col items-center gap-1 pt-1">
-              <span className="h-2.5 w-2.5 rounded-full bg-green" />
-              <span className="w-px h-8 bg-navy-border" />
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#06B6D4" }} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-white">{ride.pickup_text}</p>
-              <p className="text-sm font-medium text-white mt-3">{ride.drop_text}</p>
-            </div>
+        {/* Scrollable Content */}
+        <div className={`p-4 space-y-3.5 overflow-y-auto flex-1 ${isMapExpanded ? "flex flex-col" : ""}`}>
+          
+          {/* Interactive Route Map */}
+          <div className="w-full rounded-2xl overflow-hidden border border-cyan-400/30 shadow-md flex-shrink-0">
+            <RideMap
+              pickupLat={ride.pickup_lat}
+              pickupLng={ride.pickup_lng}
+              pickupText={ride.pickup_text}
+              dropLat={ride.drop_lat}
+              dropLng={ride.drop_lng}
+              dropText={ride.drop_text}
+              status={ride.status}
+              height={isMapExpanded ? "380px" : "210px"}
+              showRouteTimeline={false}
+            />
           </div>
-          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-navy-border">
-            <span className="badge badge-green">₹{ride.estimated_fare}</span>
-            <span className="badge badge-blue">📏 {ride.distance_km} km</span>
-            <span className="badge badge-muted">🚗 {ride.vehicle_type}</span>
-            <span className="badge badge-muted">{ride.ride_type}</span>
+
+          {/* Pickup & Destination Details */}
+          <div className="rounded-2xl bg-navy-deep border border-navy-border p-3.5 space-y-2.5 flex-shrink-0">
+            {/* Pickup */}
+            <div className="flex items-start gap-3">
+              <div className="h-6 w-6 rounded-full bg-green/20 border border-green/40 flex items-center justify-center text-xs text-green flex-shrink-0 mt-0.5 font-bold">
+                📍
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted block">Pickup Location</span>
+                <p className="text-xs font-semibold text-white truncate">{ride.pickup_text}</p>
+              </div>
+            </div>
+
+            {/* Connecting line */}
+            <div className="ml-3 h-2.5 w-0.5 bg-cyan-400/30 -my-1" />
+
+            {/* Drop / Destination (Prominently Highlighted) */}
+            <div className="flex items-start gap-3">
+              <div className="h-6 w-6 rounded-full bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-xs text-cyan-300 flex-shrink-0 mt-0.5 font-bold">
+                🏁
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold block">
+                  Dropoff Destination (Where to drop)
+                </span>
+                <p className="text-sm font-bold text-white truncate bg-cyan-500/10 border border-cyan-500/25 p-2 rounded-xl mt-0.5 text-cyan-100">
+                  {ride.drop_text}
+                </p>
+              </div>
+            </div>
+
+            {/* Stats Chips */}
+            <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-navy-border text-center">
+              <div className="p-1.5 rounded-xl bg-navy-card border border-navy-border">
+                <span className="text-[9px] font-mono text-muted block">Fare</span>
+                <strong className="text-green text-xs font-mono font-bold">₹{ride.estimated_fare}</strong>
+              </div>
+              <div className="p-1.5 rounded-xl bg-navy-card border border-navy-border">
+                <span className="text-[9px] font-mono text-muted block">Distance</span>
+                <strong className="text-white text-xs font-mono font-bold">{ride.distance_km} km</strong>
+              </div>
+              <div className="p-1.5 rounded-xl bg-navy-card border border-navy-border">
+                <span className="text-[9px] font-mono text-muted block">Vehicle</span>
+                <strong className="text-cyan-300 text-xs font-mono font-bold">{ride.vehicle_type}</strong>
+              </div>
+              <div className="p-1.5 rounded-xl bg-navy-card border border-navy-border">
+                <span className="text-[9px] font-mono text-muted block">Type</span>
+                <strong className="text-white text-xs font-mono font-bold truncate block">{ride.ride_type}</strong>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 bg-navy-deep border-t border-navy-border grid grid-cols-2 gap-3 flex-shrink-0">
           <button
-            onClick={onReject}
-            className="btn-ghost py-3.5 border-red/30 text-red hover:bg-red/10 hover:border-red"
+            type="button"
+            onClick={handleModalReject}
+            className="py-3.5 rounded-2xl font-bold text-sm text-red bg-red/10 border border-red/30 hover:bg-red/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
           >
-            ✕ Reject
+            <span>✕</span>
+            <span>Reject</span>
           </button>
           <button
-            onClick={onAccept}
-            className="btn-gradient py-3.5"
+            type="button"
+            onClick={handleModalAccept}
+            className="py-3.5 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-600 shadow-[0_0_25px_rgba(6,182,212,0.4)] hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
           >
-            ✓ Accept
+            <span>✓</span>
+            <span>Accept (₹{ride.estimated_fare})</span>
           </button>
         </div>
+
       </div>
     </div>
+
+    {/* Chat drawer rendered OUTSIDE modal card to avoid overflow/z-index clipping */}
+    {showChat && (
+      <RideChatDrawer
+        rideId={ride.id}
+        myRole="DRIVER"
+        otherPartyName="Passenger"
+        onClose={() => setShowChat(false)}
+      />
+    )}
+  </>
   );
 }
 
@@ -137,6 +248,29 @@ function ActiveRidePanel({
   const [loading, setLoad] = useState(false);
   const [err, setErr]      = useState<string | null>(null);
   const [otpInput, setOtp] = useState("");
+  const [showChat, setShowChat] = useState(false);
+  const simStepRef = useRef(0);
+
+  // Live GPS Streaming: continuously broadcasts moving driver coordinates to backend
+  useEffect(() => {
+    if (ride.status !== "ONGOING" && ride.status !== "DRIVER_ASSIGNED") return;
+
+    const pLat = ride.pickup_lat;
+    const pLng = ride.pickup_lng;
+    const dLat = ride.drop_lat;
+    const dLng = ride.drop_lng;
+
+    const interval = setInterval(() => {
+      simStepRef.current = (simStepRef.current + 1) % 100;
+      const fraction = simStepRef.current / 100;
+      const currentLat = pLat + (dLat - pLat) * fraction;
+      const currentLng = pLng + (dLng - pLng) * fraction;
+
+      driverApi.updateLocation(currentLat, currentLng).catch(() => {});
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [ride.status, ride.pickup_lat, ride.pickup_lng, ride.drop_lat, ride.drop_lng]);
 
   async function advance(status: "ARRIVED" | "ONGOING" | "COMPLETED") {
     setLoad(true); setErr(null);
@@ -172,7 +306,17 @@ function ActiveRidePanel({
           <span className="dot-online animate-pulse" />
           <h3 className="font-display font-bold text-white text-lg">Active Ride</h3>
         </div>
-        <RideStatusBadge status={ride.status} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowChat(true)}
+            className="text-xs font-bold text-cyan-300 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 rounded-xl px-3 py-1.5 flex items-center gap-1.5 transition-all shadow"
+          >
+            <span>💬</span>
+            <span>Chat</span>
+          </button>
+          <RideStatusBadge status={ride.status} />
+        </div>
       </div>
 
       {/* Interactive Map */}
@@ -207,6 +351,44 @@ function ActiveRidePanel({
           <strong className="text-cyan-400 text-base font-bold font-display">{ride.vehicle_type}</strong>
         </div>
       </div>
+
+      {/* 🔴 Live GPS Broadcasting Indicator */}
+      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 flex items-center justify-between text-xs text-white">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping" />
+          <span className="font-bold font-mono text-[11px] text-emerald-300">
+            LIVE GPS BROADCASTING
+          </span>
+        </div>
+        <span className="text-[10px] text-slate-400 font-mono">
+          Auto-updating to Passenger
+        </span>
+      </div>
+
+      {/* Prominent Direct Chat with Passenger Bar */}
+      <button
+        type="button"
+        onClick={() => setShowChat(true)}
+        className="w-full py-3.5 px-4 rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-cyan-950/70 via-blue-950/50 to-cyan-950/70 hover:from-cyan-900/80 hover:to-blue-900/80 transition-all flex items-center justify-between text-white shadow-[0_0_20px_rgba(6,182,212,0.15)] active:scale-98 group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-2xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-xl shadow">
+            💬
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">
+              Chat with Passenger
+            </p>
+            <p className="text-[11px] text-cyan-300/80 font-mono">
+              Send message, share ETA or landmark
+            </p>
+          </div>
+        </div>
+        <span className="text-xs font-bold text-cyan-300 bg-cyan-500/25 border border-cyan-400/40 px-3.5 py-1.5 rounded-xl flex items-center gap-1 shadow">
+          <span>Open Chat</span>
+          <span>→</span>
+        </span>
+      </button>
 
       {err && (
         <div className="text-sm text-red rounded-xl bg-red/10 border border-red/20 px-3.5 py-2.5 font-medium">
@@ -283,6 +465,15 @@ function ActiveRidePanel({
           <p className="font-display font-bold text-white">Trip Completed!</p>
           <p className="text-xs text-muted">Collected: <span className="text-green font-bold text-sm">₹{ride.estimated_fare}</span></p>
         </div>
+      )}
+
+      {showChat && (
+        <RideChatDrawer
+          rideId={ride.id}
+          myRole="DRIVER"
+          otherPartyName="Passenger"
+          onClose={() => setShowChat(false)}
+        />
       )}
     </div>
   );
@@ -415,21 +606,26 @@ export default function DriverDashboard() {
           setProfile(p);
           setIsOnline(p.is_online === 1);
 
-          // Get Browser Live GPS Location
+          // Stream Driver Live Moving GPS Location
           if (typeof window !== "undefined" && "geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-                setGpsLocation({ lat, lng });
-                driverApi.updateLocation(lat, lng).catch(() => {});
-                setProfile((prev) => prev ? { ...prev, current_lat: lat, current_lng: lng } : prev);
-              },
-              (err) => {
-                console.log("Geolocation error or denied:", err.message);
-              },
-              { enableHighAccuracy: true, timeout: 10000 }
-            );
+            const handlePos = (pos: GeolocationPosition) => {
+              const lat = pos.coords.latitude;
+              const lng = pos.coords.longitude;
+              setGpsLocation({ lat, lng });
+              driverApi.updateLocation(lat, lng).catch(() => {});
+              setProfile((prev) => prev ? { ...prev, current_lat: lat, current_lng: lng } : prev);
+            };
+
+            navigator.geolocation.getCurrentPosition(handlePos, () => {}, { enableHighAccuracy: true, timeout: 10000 });
+            
+            // Watch continuous position updates as driver moves
+            const watchId = navigator.geolocation.watchPosition(handlePos, () => {}, {
+              enableHighAccuracy: true,
+              maximumAge: 3000,
+              timeout: 10000,
+            });
+
+            return () => navigator.geolocation.clearWatch(watchId);
           }
         })
         .catch((e: any) => {
@@ -449,19 +645,33 @@ export default function DriverDashboard() {
         driverApi.getDriverRides().catch(() => []),
       ]);
       if (active) {
+        // Driver accepted — show active ride, clear pending
         setActiveRide(active);
         setPending(null);
       } else {
         const validPending = pending.filter((p) => !rejectedRidesRef.current.has(p.id));
-        if (validPending.length > 0 && !pendingRide) {
-          setPending(validPending[0]);
-        } else if (validPending.length === 0 && pendingRide) {
-          setPending(null);
+        if (validPending.length > 0) {
+          // New ride available and none currently shown — set it
+          setPending((prev) => prev ?? validPending[0]);
+        }
+        // If validPending is empty but pendingRide is set:
+        // The customer may have cancelled the ride — check by seeing if the
+        // ride id is no longer in pending at all (not just filtered)
+        if (validPending.length === 0) {
+          const allPendingIds = pending.map((p) => p.id);
+          setPending((prev) => {
+            if (!prev) return null;
+            // If the ride we're showing is no longer in any pending rides
+            // (not just rejected), it means it was cancelled or expired on server
+            if (!allPendingIds.includes(prev.id)) return null;
+            // Otherwise keep showing it
+            return prev;
+          });
         }
       }
       if (history) setRides(history);
     } catch { /* silently ignore network blips */ }
-  }, [pendingRide]);
+  }, []);
 
   useEffect(() => {
     if (!isOnline || !profile) return;
@@ -470,12 +680,27 @@ export default function DriverDashboard() {
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [isOnline, profile, poll]);
 
+  // Enable audio context on first user interaction
+  useEffect(() => {
+    const handleUnlock = () => {
+      unlockAudio();
+    };
+    window.addEventListener("click", handleUnlock, { once: true });
+    window.addEventListener("touchstart", handleUnlock, { once: true });
+    return () => {
+      window.removeEventListener("click", handleUnlock);
+      window.removeEventListener("touchstart", handleUnlock);
+    };
+  }, []);
+
   async function handleToggle() {
+    unlockAudio();
     setToggling(true);
     try {
       const res = await driverApi.toggleOnline(!isOnline);
       setIsOnline(res.is_online === 1);
       if (!res.is_online) {
+        stopDriverRideAlert();
         setPending(null);
         if (pollingRef.current) clearInterval(pollingRef.current);
       }
@@ -485,6 +710,7 @@ export default function DriverDashboard() {
   }
 
   async function handleAccept() {
+    stopDriverRideAlert();
     if (!pendingRide) return;
     try {
       const updated = await driverApi.respondToRide(pendingRide.id, true);
@@ -497,6 +723,7 @@ export default function DriverDashboard() {
   }
 
   async function handleReject() {
+    stopDriverRideAlert();
     if (!pendingRide) return;
     const rideId = pendingRide.id;
     rejectedRidesRef.current.add(rideId);
@@ -643,6 +870,25 @@ export default function DriverDashboard() {
         </div>
 
 
+
+        {/* Return Trip & Empty Taxi Board Banner */}
+        <div className="mb-5 rounded-3xl border border-purple-500/30 bg-gradient-to-r from-purple-950/40 via-navy-card to-blue-950/30 p-4 shadow-lg flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-2xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-xl shadow">
+              📋
+            </div>
+            <div>
+              <h4 className="font-bold text-white text-sm">Return Trip Board</h4>
+              <p className="text-xs text-purple-300 font-mono">Post empty taxi or shared seats</p>
+            </div>
+          </div>
+          <Link
+            href="/board/post"
+            className="text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 px-3.5 py-2 rounded-xl shadow transition-all whitespace-nowrap active:scale-95"
+          >
+            + Post Ride
+          </Link>
+        </div>
 
         {/* Emergency SOS Banner */}
         <div className="mb-5">

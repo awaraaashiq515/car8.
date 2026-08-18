@@ -374,42 +374,40 @@ export default function BoardPage() {
         {/* ── Header ── */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          marginBottom: 24, animation: "fadeSlideUp 0.4s ease both",
+          marginBottom: 18, gap: 8, animation: "fadeSlideUp 0.4s ease both",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             {/* Blue-cyan icon matching home page logo style */}
             <div style={{
-              width: 44, height: 44, borderRadius: 16,
+              width: 40, height: 40, borderRadius: 14,
               background: "linear-gradient(135deg, #2563EB, #06B6D4)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 20, boxShadow: "0 0 20px rgba(37,99,235,0.3)", flexShrink: 0,
+              fontSize: 18, boxShadow: "0 0 20px rgba(37,99,235,0.3)", flexShrink: 0,
             }}>📋</div>
-            <div>
-              <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "#fff", margin: 0 }}>
+            <div style={{ minWidth: 0 }}>
+              <h1 style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1.2 }}>
                 Ride Board
               </h1>
-              <p style={{ fontSize: 12, color: "#4B5563", margin: 0, fontFamily: "var(--font-mono)" }}>
-                Browse shared rides by drivers
+              <p style={{ fontSize: 11, color: "#4B5563", margin: 0, fontFamily: "var(--font-mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                Shared driver rides
               </p>
             </div>
           </div>
-          {/* Post button — purple accent for the board card, matches home page Ride Board card */}
-          {isDriver && (
-            <Link
-              href="/board/post"
-              id="post-ride-btn"
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "10px 18px", borderRadius: 14,
-                fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 800, color: "#fff",
-                background: "linear-gradient(135deg, #7C3AED, #A855F7)",
-                boxShadow: "0 0 18px rgba(168,85,247,0.35)",
-                textDecoration: "none", flexShrink: 0,
-              }}
-            >
-              + Post
-            </Link>
-          )}
+          {/* Post button — always accessible for drivers to post return trips */}
+          <Link
+            href="/board/post"
+            id="post-ride-btn"
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "8px 14px", borderRadius: 12,
+              fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800, color: "#fff",
+              background: "linear-gradient(135deg, #7C3AED, #A855F7)",
+              boxShadow: "0 0 18px rgba(168,85,247,0.35)",
+              textDecoration: "none", flexShrink: 0, whiteSpace: "nowrap",
+            }}
+          >
+            + Post Ride
+          </Link>
         </div>
 
         {/* ── Tabs — blue active state matching home page ride type selector ── */}

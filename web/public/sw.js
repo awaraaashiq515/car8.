@@ -1,4 +1,4 @@
-const CACHE_NAME = "cab8-v1";
+const CACHE_NAME = "cab8-v2";
 const OFFLINE_URL = "/";
 
 // Assets to cache for offline support

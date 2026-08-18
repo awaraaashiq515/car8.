@@ -7,6 +7,8 @@ import { driverRouter }     from "./routes/driver.routes";
 import { driverAuthRouter } from "./routes/driver.auth.routes";
 import { boardRouter }      from "./routes/board.routes";
 import { unionRouter }      from "./routes/union.routes";
+import { adminRouter }      from "./routes/admin.routes";
+import { settingsRouter }   from "./routes/settings.routes";
 import "./lib/db"; // ensures schema is created on boot
 
 const app = express();
@@ -22,6 +24,8 @@ app.use("/driver",      driverRouter);
 app.use("/board",       boardRouter);
 app.use("/union",       unionRouter);
 app.use("/api/union",   unionRouter);
+app.use("/admin",       adminRouter); // super-admin portal — no public links
+app.use("/settings",    settingsRouter);
 
 app.use((req, res) => res.status(404).json({ error: `No route for ${req.method} ${req.path}` }));
 

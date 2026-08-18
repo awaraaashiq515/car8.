@@ -367,6 +367,15 @@ export default function DriverProfilePage() {
               </button>
             )}
 
+            {/* Return Trip Board Action */}
+            <Link
+              href="/board/post"
+              className="px-3 py-1 rounded-xl bg-purple-600/30 border border-purple-400/50 text-purple-200 text-xs font-bold hover:bg-purple-600/40 transition-all flex items-center gap-1 shadow"
+            >
+              <span>📋</span>
+              <span>Post Board</span>
+            </Link>
+
             {/* Edit Mode Toggle */}
             {editMode ? (
               <button
@@ -504,6 +513,25 @@ export default function DriverProfilePage() {
             </div>
           </div>
         )}
+
+        {/* ── Return Trip Board Quick Action Card ── */}
+        <div className="rounded-3xl border border-purple-500/30 bg-gradient-to-r from-purple-950/40 via-[#0D1B2E] to-indigo-950/30 p-4 shadow-lg flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-lg shadow">
+              📋
+            </div>
+            <div>
+              <h4 className="font-bold text-white text-xs sm:text-sm">Return Trip &amp; Empty Taxi Board</h4>
+              <p className="text-[11px] text-purple-300 font-mono">Post shared carpool or return ride</p>
+            </div>
+          </div>
+          <Link
+            href="/board/post"
+            className="text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 px-3.5 py-2 rounded-xl shadow transition-all whitespace-nowrap active:scale-95"
+          >
+            + Post Ride
+          </Link>
+        </div>
 
         {/* ── App Category Segmented Control Tabs ── */}
         <nav className="flex items-center gap-1 p-1 bg-[#0D182E] rounded-2xl border border-[#1A2844] overflow-x-auto scrollbar-none shadow-inner">

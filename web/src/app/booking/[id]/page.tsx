@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, Ride, RideStatus } from "@/lib/api";
 import RideMap from "@/components/RideMap";
+import RideChatDrawer from "@/components/RideChatDrawer";
+import ShareSafetyModal from "@/components/ShareSafetyModal";
 
 // ── Status metadata ─────────────────────────────────────────
 const STATUS_CONFIG: Record<
@@ -367,6 +369,9 @@ export default function BookingPage({ params }: { params: { id: string } }) {
   const [advancing, setAdv] = useState(false);
   const [showAutoRating, setShowAutoRating] = useState(false);
   const [dismissedRating, setDismissedRating] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
+  const [showSafety, setShowSafety] = useState(false);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -424,6 +429,22 @@ export default function BookingPage({ params }: { params: { id: string } }) {
       setAdv(false);
     }
   }
+
+  // Track unread messages from driver when chat drawer is closed
+  const prevMsgCountRef = useRef(0);
+  useEffect(() => {
+    if (!ride || showChat) return;
+    let cancel = false;
+    api.getMessages(ride.id).then((msgs) => {
+      if (cancel) return;
+      const driverMsgs = msgs.filter((m) => m.sender_role === "DRIVER").length;
+      if (prevMsgCountRef.current > 0 && driverMsgs > prevMsgCountRef.current) {
+        setChatUnread((prev) => prev + (driverMsgs - prevMsgCountRef.current));
+      }
+      prevMsgCountRef.current = driverMsgs;
+    }).catch(() => {});
+    return () => { cancel = true; };
+  }, [ride, showChat]);
 
   const isSessionError = error?.includes("Session expired") || error?.includes("log in");
 
@@ -498,12 +519,22 @@ export default function BookingPage({ params }: { params: { id: string } }) {
               <p className="text-[10px] text-muted font-mono">#{ride.id.slice(-8).toUpperCase()}</p>
             </div>
           </div>
-          <Link
-            href="/my-rides"
-            className="text-xs text-cyan-400 border border-cyan-500/30 bg-cyan-500/10 rounded-xl px-3 py-1.5 font-bold hover:bg-cyan-500/20 transition-all"
-          >
-            My Rides
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSafety(true)}
+              className="text-xs text-cyan-300 border border-cyan-400/40 bg-cyan-500/15 rounded-xl px-2.5 py-1.5 font-bold hover:bg-cyan-500/25 transition-all flex items-center gap-1 shadow"
+            >
+              <span>🛡️</span>
+              <span>Safety</span>
+            </button>
+            <Link
+              href="/my-rides"
+              className="text-xs text-muted border border-navy-border bg-navy-card rounded-xl px-3 py-1.5 font-bold hover:text-white transition-all"
+            >
+              My Rides
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -550,6 +581,31 @@ export default function BookingPage({ params }: { params: { id: string } }) {
                 <p className="text-[10px] text-cyan-300 font-mono">🔒 Required by driver to verify &amp; start trip</p>
               </div>
             )}
+
+            {/* 🛡️ Live Safety & Location Sharing Banner */}
+            <button
+              type="button"
+              onClick={() => setShowSafety(true)}
+              className="w-full py-3 px-4 rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-cyan-950/70 via-blue-950/50 to-cyan-950/70 hover:from-cyan-900/80 hover:to-blue-900/80 transition-all flex items-center justify-between text-white shadow-[0_0_20px_rgba(6,182,212,0.15)] active:scale-98 group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-lg shadow">
+                  🛡️
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
+                    Share Live Location &amp; Safety
+                  </p>
+                  <p className="text-[10px] text-cyan-300/80 font-mono">
+                    WhatsApp share link with family &amp; friends
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-cyan-300 bg-cyan-500/25 border border-cyan-400/40 px-3 py-1 rounded-xl flex items-center gap-1 shadow">
+                <span>Share</span>
+                <span>→</span>
+              </span>
+            </button>
 
             {/* Interactive Road Navigation Map */}
             <RideMap
@@ -782,6 +838,54 @@ export default function BookingPage({ params }: { params: { id: string } }) {
             setShowAutoRating(false);
             load();
           }}
+        />
+      )}
+
+      {/* ── FLOATING CHAT BUTTON (Ola / Uber style) ── */}
+      {ride && !isCompleted && !isCancelled && (
+        <>
+          <button
+            id="chat-toggle-btn"
+            onClick={() => {
+              setShowChat(true);
+              setChatUnread(0);
+            }}
+            className="fixed bottom-6 right-5 z-50 h-14 w-14 rounded-2xl flex items-center justify-center shadow-2xl transition-all hover:scale-105 active:scale-95"
+            style={{
+              background: "linear-gradient(135deg, #2563EB, #06B6D4)",
+              boxShadow: "0 8px 32px rgba(37,99,235,0.45)",
+            }}
+            aria-label="Chat with driver"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            {chatUnread > 0 && (
+              <span
+                className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-mono font-bold text-white"
+                style={{ background: "#EF4444", boxShadow: "0 0 10px rgba(239,68,68,0.6)" }}
+              >
+                {chatUnread}
+              </span>
+            )}
+          </button>
+
+          {showChat && (
+            <RideChatDrawer
+              rideId={ride.id}
+              myRole="CUSTOMER"
+              otherPartyName={ride.driver?.name || "Your Driver"}
+              onClose={() => setShowChat(false)}
+            />
+          )}
+        </>
+      )}
+
+      {/* Safety & Location Share Modal */}
+      {showSafety && ride && (
+        <ShareSafetyModal
+          ride={ride}
+          onClose={() => setShowSafety(false)}
         />
       )}
     </div>

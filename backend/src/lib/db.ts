@@ -72,6 +72,16 @@ try {
       tip_amount REAL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS ride_messages (
+      id TEXT PRIMARY KEY,
+      ride_id TEXT NOT NULL REFERENCES rides(id),
+      sender_id TEXT NOT NULL,
+      sender_role TEXT NOT NULL, -- 'CUSTOMER' | 'DRIVER'
+      sender_name TEXT,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 } catch (e) {
   console.error("Migration check failed:", e);

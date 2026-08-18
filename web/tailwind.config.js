@@ -86,13 +86,23 @@ module.exports = {
           "0%":   { strokeDashoffset: "0" },
           "100%": { strokeDashoffset: "113" },
         },
+        "shimmer": {
+          "0%":   { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
+        "fade-in": {
+          "0%":   { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
       },
       animation: {
         "pulse-glow": "pulse-glow 2s ease-in-out infinite",
         "fade-up":    "fade-up 0.4s ease-out both",
+        "fade-in":    "fade-in 0.3s ease-out both",
         "slide-in":   "slide-in 0.35s ease-out both",
         "dash-draw":  "dash-draw 2.2s ease-out forwards",
         "spin-slow":  "spin-slow 8s linear infinite",
+        "shimmer":    "shimmer 2s linear infinite",
       },
     },
   },

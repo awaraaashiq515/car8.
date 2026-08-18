@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { RideType, VehicleType, clearToken, getUserName } from "@/lib/api";
+import { RideType, VehicleType, clearToken, getUserName, resolvePlaceCoordinates } from "@/lib/api";
 import LocationInput from "@/components/LocationInput";
 
 type VT = VehicleType;
@@ -40,13 +40,15 @@ function TimeGreeting(name: string | null) {
 export default function CustomerHomePage() {
   const router = useRouter();
 
-  const [pickup,      setPickup]      = useState("");
-  const [drop,        setDrop]        = useState("");
-  const [rideType,    setRideType]    = useState<RT>("OUTSTATION");
-  const [vehicleType, setVehicleType] = useState<VT>("SUV");
-  const [userName,    setUserNameVal] = useState<string | null>(null);
-  const [showMenu,    setShowMenu]    = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
+  const [pickup,       setPickup]       = useState("");
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [drop,         setDrop]         = useState("");
+  const [dropCoords,   setDropCoords]   = useState<{ lat: number; lng: number } | null>(null);
+  const [rideType,     setRideType]     = useState<RT>("OUTSTATION");
+  const [vehicleType,  setVehicleType]  = useState<VT>("SUV");
+  const [userName,     setUserNameVal]  = useState<string | null>(null);
+  const [showMenu,     setShowMenu]     = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
 
   useEffect(() => {
     const token = window.localStorage.getItem("cab8_token");
@@ -62,6 +64,14 @@ export default function CustomerHomePage() {
     if (pickup.toLowerCase() === drop.toLowerCase()) { setError("Pickup and drop cannot be the same."); return; }
     setError(null);
     const params = new URLSearchParams({ pickup, drop, rideType, vehicleType });
+    if (pickupCoords && pickupCoords.lat && pickupCoords.lng) {
+      params.set("pickupLat", pickupCoords.lat.toString());
+      params.set("pickupLng", pickupCoords.lng.toString());
+    }
+    if (dropCoords && dropCoords.lat && dropCoords.lng) {
+      params.set("dropLat", dropCoords.lat.toString());
+      params.set("dropLng", dropCoords.lng.toString());
+    }
     router.push(`/results?${params.toString()}`);
   }
 
@@ -160,14 +170,28 @@ export default function CustomerHomePage() {
             <LocationInput
               label="📍 Pickup"
               value={pickup}
-              onChange={setPickup}
+              onChange={(label, place) => {
+                setPickup(label);
+                if (place && place.lat && place.lng) {
+                  setPickupCoords({ lat: place.lat, lng: place.lng });
+                } else {
+                  setPickupCoords(null);
+                }
+              }}
               placeholder="Search or enter pickup location…"
               isPickup
             />
             <LocationInput
               label="🏁 Drop"
               value={drop}
-              onChange={setDrop}
+              onChange={(label, place) => {
+                setDrop(label);
+                if (place && place.lat && place.lng) {
+                  setDropCoords({ lat: place.lat, lng: place.lng });
+                } else {
+                  setDropCoords(null);
+                }
+              }}
               placeholder="Search or enter drop location…"
             />
           </div>
@@ -287,7 +311,13 @@ export default function CustomerHomePage() {
           {QUICK_PLACES.map((place) => (
             <button
               key={place.label}
-              onClick={() => setDrop(place.label)}
+              onClick={() => {
+                setDrop(place.label);
+                const coords = resolvePlaceCoordinates(place.label);
+                if (coords && coords.lat && coords.lng) {
+                  setDropCoords({ lat: coords.lat, lng: coords.lng });
+                }
+              }}
               className={`w-full flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all duration-200 ${
                 drop === place.label
                   ? "border-blue-primary/50 bg-blue-primary/10"

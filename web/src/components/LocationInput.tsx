@@ -50,9 +50,71 @@ function fuzzyScore(query: string, target: string): number {
   return 0;
 }
 
+import MapPickerModal from "@/components/MapPickerModal";
+
+// ── Detailed Reverse Geocoding (Nominatim + BigDataCloud) ─
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    // 1. Nominatim Reverse Geocoding (High detail: Landmark, Road, Locality, City, PIN)
+    const nomUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+    const res = await fetch(nomUrl, { headers: { "Accept-Language": "en" } });
+    if (res.ok) {
+      const data = await res.json();
+      const addr = data.address || {};
+      const parts: string[] = [];
+
+      const landmark = addr.amenity || addr.building || addr.shop || addr.tourism || addr.historic || "";
+      if (landmark) parts.push(landmark);
+
+      const road = addr.road || addr.street || addr.footway || addr.path || "";
+      if (road && !parts.includes(road)) parts.push(road);
+
+      const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.village || addr.hamlet || "";
+      if (locality && !parts.includes(locality)) parts.push(locality);
+
+      const city = addr.city || addr.town || addr.municipality || addr.tehsil || addr.subdistrict || addr.county || "";
+      if (city && !parts.includes(city) && !parts.some(p => p.toLowerCase().includes(city.toLowerCase()))) {
+        parts.push(city);
+      }
+
+      const state = addr.state ? addr.state.replace("Himachal Pradesh", "HP") : "";
+      const pin = addr.postcode || "";
+
+      if (state) {
+        parts.push(pin ? `${state} ${pin}` : state);
+      }
+
+      if (parts.length > 0) {
+        return parts.join(", ");
+      }
+    }
+  } catch {}
+
+  try {
+    // 2. BigDataCloud Fallback
+    const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
+    const res = await fetch(bdcUrl);
+    if (res.ok) {
+      const data = await res.json();
+      const locality = data.locality || data.city || data.principalSubdivisionDistrict || "";
+      const district = data.principalSubdivisionDistrict || "";
+      const state = data.principalSubdivision ? data.principalSubdivision.replace("Himachal Pradesh", "HP") : "";
+      const parts = [locality];
+      if (district && district.toLowerCase() !== locality.toLowerCase()) parts.push(district);
+      if (state && state.toLowerCase() !== district.toLowerCase() && state.toLowerCase() !== locality.toLowerCase()) parts.push(state);
+      if (parts.filter(Boolean).length > 0) {
+        return parts.filter(Boolean).join(", ");
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to closest preset
+  return nearestPlace(lat, lng).label;
+}
+
 interface Props {
   value: string;
-  onChange: (label: string) => void;
+  onChange: (label: string, place?: Place) => void;
   placeholder: string;
   isPickup?: boolean;
   label: string;
@@ -60,19 +122,15 @@ interface Props {
 
 type GpsState = "idle" | "loading" | "done" | "error";
 
-interface LiveGeoResult {
-  display_name: string;
-  lat: string;
-  lon: string;
-}
-
 export default function LocationInput({ value, onChange, placeholder, isPickup, label }: Props) {
-  const [query,        setQuery]        = useState(value);
-  const [open,         setOpen]         = useState(false);
-  const [gpsState,     setGpsState]     = useState<GpsState>("idle");
-  const [gpsLabel,     setGpsLabel]     = useState<string | null>(null);
-  const [liveResults,  setLiveResults]  = useState<Place[]>([]);
-  const [isSearching,  setIsSearching]  = useState(false);
+  const [query,          setQuery]          = useState(value);
+  const [open,           setOpen]           = useState(false);
+  const [gpsState,       setGpsState]       = useState<GpsState>("idle");
+  const [gpsLabel,       setGpsLabel]       = useState<string | null>(null);
+  const [liveResults,    setLiveResults]    = useState<Place[]>([]);
+  const [isSearching,    setIsSearching]    = useState(false);
+  const [showMapPicker,  setShowMapPicker]  = useState(false);
+  const [currentCoords,  setCurrentCoords]  = useState<{ lat: number; lng: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef     = useRef<HTMLInputElement>(null);
@@ -222,7 +280,7 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
   const showCustom = query.trim().length > 0 &&
     !combinedPlaces.some((p) => p.label.toLowerCase() === query.trim().toLowerCase());
 
-  // ── GPS auto-detect ──────────────────────────────────
+  // ── GPS auto-detect (High Accuracy) ─────────────────
   function detectLocation() {
     if (!navigator.geolocation) {
       setGpsState("error");
@@ -230,31 +288,68 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
     }
     setGpsState("loading");
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
-        const nearest = nearestPlace(lat, lng);
-        setGpsLabel(nearest.label);
-        setGpsState("done");
-        setQuery(nearest.label);
-        onChange(nearest.label);
-        setOpen(false);
+        setCurrentCoords({ lat, lng });
+        try {
+          const realName = await reverseGeocode(lat, lng);
+          const detectedPlace: Place = { label: realName, lat, lng };
+          setGpsLabel(realName);
+          setGpsState("done");
+          setQuery(realName);
+          onChange(realName, detectedPlace);
+          setOpen(false);
+        } catch {
+          const nearest = nearestPlace(lat, lng);
+          setGpsLabel(nearest.label);
+          setGpsState("done");
+          setQuery(nearest.label);
+          onChange(nearest.label, nearest);
+          setOpen(false);
+        }
       },
       () => {
-        setGpsState("error");
-        setTimeout(() => setGpsState("idle"), 3000);
+        // Fallback without high accuracy
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const { latitude: lat, longitude: lng } = pos.coords;
+            setCurrentCoords({ lat, lng });
+            const realName = await reverseGeocode(lat, lng);
+            const detectedPlace: Place = { label: realName, lat, lng };
+            setGpsLabel(realName);
+            setGpsState("done");
+            setQuery(realName);
+            onChange(realName, detectedPlace);
+            setOpen(false);
+          },
+          () => {
+            setGpsState("error");
+            setTimeout(() => setGpsState("idle"), 3000);
+          },
+          { enableHighAccuracy: false, timeout: 8000 }
+        );
       },
-      { timeout: 8000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }
 
   function select(place: Place) {
     setQuery(place.label);
-    onChange(place.label);
+    setCurrentCoords({ lat: place.lat, lng: place.lng });
+    onChange(place.label, place);
     setOpen(false);
   }
 
   function selectCustom() {
-    onChange(query.trim());
+    const trimmed = query.trim();
+    onChange(trimmed, { label: trimmed, lat: 0, lng: 0 });
+    setOpen(false);
+  }
+
+  function handleMapConfirmed(place: Place) {
+    setQuery(place.label);
+    setCurrentCoords({ lat: place.lat, lng: place.lng });
+    onChange(place.label, place);
     setOpen(false);
   }
 
@@ -263,13 +358,22 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
   return (
     <div ref={containerRef} className={`relative ${open ? "z-[200]" : "z-10"}`}>
       {/* Label */}
-      <label className="block font-mono text-[11px] uppercase tracking-wider text-muted mb-1.5">
-        {label}
-      </label>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="font-mono text-[11px] uppercase tracking-wider text-muted">
+          {label}
+        </label>
+        <button
+          type="button"
+          onClick={() => setShowMapPicker(true)}
+          className="text-[11px] text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1 transition-colors"
+        >
+          <span>🗺️</span> Set on Map
+        </button>
+      </div>
 
       {/* Input row */}
       <div
-        className={`flex items-center gap-2.5 rounded-2xl border px-4 py-3 transition-all duration-200 ${
+        className={`flex items-center gap-2 rounded-2xl border px-3.5 py-3 transition-all duration-200 ${
           open ? "border-blue-primary bg-navy-deep" : "border-navy-border bg-navy-deep hover:border-navy-hover"
         }`}
       >
@@ -303,15 +407,27 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
         {query && !isSearching && (
           <button
             onClick={() => { setQuery(""); onChange(""); inputRef.current?.focus(); setOpen(true); }}
-            className="text-muted hover:text-white transition-colors flex-shrink-0 text-xs"
+            className="text-muted hover:text-white transition-colors flex-shrink-0 text-xs p-1"
           >
             ✕
           </button>
         )}
 
+        {/* Choose on Map Pin Button */}
+        <button
+          type="button"
+          onClick={() => setShowMapPicker(true)}
+          className="flex-shrink-0 h-7 px-2 rounded-lg bg-navy-card border border-navy-border hover:border-cyan-400/40 text-cyan-400 text-xs flex items-center gap-1 transition-all"
+          title="Set exact location on Google Map"
+        >
+          <span>🗺️</span>
+          <span className="text-[11px] font-mono hidden sm:inline">Map</span>
+        </button>
+
         {/* GPS button */}
         {isPickup && (
           <button
+            type="button"
             onClick={detectLocation}
             className={`flex-shrink-0 h-7 w-7 rounded-lg flex items-center justify-center transition-all duration-200 ${
               gpsState === "loading" ? "bg-blue-primary/20" :
@@ -319,7 +435,7 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
               gpsState === "error"   ? "bg-red/20" :
                                        "bg-navy-border hover:bg-blue-primary/20"
             }`}
-            title="Use my current location"
+            title="Use my current GPS location"
           >
             {gpsState === "loading" ? (
               <span className="h-3.5 w-3.5 rounded-full border-2 border-blue-primary/30 border-t-blue-primary animate-spin" />
@@ -340,22 +456,44 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
       {/* GPS status message */}
       {isPickup && gpsState === "done" && gpsLabel && (
         <p className="text-xs text-green mt-1 px-1 flex items-center gap-1">
-          <span>✓</span> Nearest location: <span className="font-medium">{gpsLabel}</span>
+          <span>✓</span> Detected: <span className="font-medium">{gpsLabel}</span>
         </p>
       )}
       {isPickup && gpsState === "error" && (
-        <p className="text-xs text-red mt-1 px-1">⚠️ Location access denied. Please select manually.</p>
+        <p className="text-xs text-red mt-1 px-1">⚠️ Location access denied. Select on Map or choose below.</p>
       )}
 
       {/* ── Dropdown ── */}
       {open && (
         <div
           className="absolute left-0 right-0 top-full mt-2 rounded-2xl border border-blue-primary/50 bg-[#0D1B2E] z-[200] overflow-hidden"
-          style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.95)", maxHeight: "280px", overflowY: "auto" }}
+          style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.95)", maxHeight: "300px", overflowY: "auto" }}
         >
+          {/* Quick Action: Set on Google Map */}
+          <button
+            type="button"
+            onMouseDown={() => {
+              setOpen(false);
+              setShowMapPicker(true);
+            }}
+            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-navy-hover transition-colors border-b border-navy-border bg-cyan-950/20"
+          >
+            <div
+              className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
+              style={{ background: "linear-gradient(135deg, #06B6D433, #2563EB33)", border: "1px solid #06B6D455" }}
+            >
+              🗺️
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-bold text-cyan-300">Set location on Google Map</div>
+              <div className="text-[11px] text-muted">Pinpoint your exact street or house on map</div>
+            </div>
+          </button>
+
           {/* GPS option at top — only for pickup */}
           {isPickup && (
             <button
+              type="button"
               onMouseDown={detectLocation}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-navy-hover transition-colors border-b border-navy-border"
             >
@@ -374,12 +512,12 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
               </div>
               <div className="text-left">
                 <div className="text-sm font-semibold text-blue-light">
-                  {gpsState === "loading" ? "Detecting location…" : "Use my current location"}
+                  {gpsState === "loading" ? "Detecting high-accuracy GPS…" : "Use my current location"}
                 </div>
                 <div className="text-xs text-muted">
                   {gpsState === "done" && gpsLabel
-                    ? `Nearest: ${gpsLabel}`
-                    : "Tap to auto-detect via GPS"}
+                    ? `Detected: ${gpsLabel}`
+                    : "Auto-detect live GPS location"}
                 </div>
               </div>
             </button>
@@ -401,6 +539,7 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
             return (
               <button
                 key={place.label}
+                type="button"
                 onMouseDown={() => select(place)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-navy-hover transition-colors ${
                   isSelected ? "bg-blue-primary/10" : ""
@@ -425,6 +564,7 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
           {/* Always show Custom Location Option if something is typed */}
           {showCustom && (
             <button
+              type="button"
               onMouseDown={selectCustom}
               className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-navy-hover transition-colors border-t border-navy-border"
             >
@@ -444,6 +584,18 @@ export default function LocationInput({ value, onChange, placeholder, isPickup, 
             </button>
           )}
         </div>
+      )}
+
+      {/* ── Interactive Google Map Pin Picker Modal ── */}
+      {showMapPicker && (
+        <MapPickerModal
+          initialLat={currentCoords?.lat || 31.7084}
+          initialLng={currentCoords?.lng || 76.9319}
+          initialLabel={query || gpsLabel || ""}
+          isPickup={isPickup}
+          onConfirm={handleMapConfirmed}
+          onClose={() => setShowMapPicker(false)}
+        />
       )}
     </div>
   );

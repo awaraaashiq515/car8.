@@ -15,8 +15,10 @@ const RIDE_TYPE_SURCHARGE: Record<RideType, number> = {
   HOURLY: 0,
 };
 
-/** Haversine distance in km between two lat/lng points. */
-export function distanceKm(
+const distanceCache = new Map<string, number>();
+
+/** Haversine straight-line distance in km */
+function haversineKm(
   lat1: number,
   lng1: number,
   lat2: number,
@@ -31,7 +33,63 @@ export function distanceKm(
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLng / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
+  return R * c;
+}
+
+/** Synchronous distance in km with road curvature multiplier */
+export function distanceKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const straight = haversineKm(lat1, lng1, lat2, lng2);
+  if (straight === 0) return 0;
+  // Road terrain factor (hills and highway routes are typically 1.35x - 1.45x crow distance)
+  const roadFactor = straight < 10 ? 1.25 : 1.4;
+  return Math.round(straight * roadFactor * 10) / 10;
+}
+
+/**
+ * Real Driving Road Distance in KM via OSRM Driving Engine.
+ * Fetches the actual highway and street driving route distance, with in-memory caching.
+ */
+export async function getRoadDistanceKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): Promise<number> {
+  if (lat1 === lat2 && lng1 === lng2) return 0;
+
+  const key = `${lat1.toFixed(4)},${lng1.toFixed(4)}-${lat2.toFixed(4)},${lng2.toFixed(4)}`;
+  if (distanceCache.has(key)) {
+    return distanceCache.get(key)!;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+
+    const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=false`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      const data = await res.json() as any;
+      if (data?.routes?.[0]?.distance) {
+        const roadKm = Math.round(data.routes[0].distance / 100) / 10;
+        distanceCache.set(key, roadKm);
+        return roadKm;
+      }
+    }
+  } catch (e) {
+    // Network fallback
+  }
+
+  const fallback = distanceKm(lat1, lng1, lat2, lng2);
+  distanceCache.set(key, fallback);
+  return fallback;
 }
 
 export function estimateFare(

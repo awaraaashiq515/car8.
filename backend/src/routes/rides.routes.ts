@@ -3,7 +3,7 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { distanceKm, estimateFare, VehicleType, RideType, CITY_COORDS } from "../services/fare";
+import { distanceKm, getRoadDistanceKm, estimateFare, VehicleType, RideType, CITY_COORDS } from "../services/fare";
 
 export const ridesRouter = Router();
 
@@ -24,18 +24,23 @@ const searchSchema = z.object({
  * verified drivers matching the requested vehicle type — this powers the
  * results screen before the customer confirms a booking.
  */
-ridesRouter.post("/search", (req, res) => {
+ridesRouter.post("/search", async (req, res) => {
   const parsed = searchSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const q = parsed.data;
-  const tripKm = distanceKm(q.pickupLat, q.pickupLng, q.dropLat, q.dropLng);
+  const tripKm = await getRoadDistanceKm(q.pickupLat, q.pickupLng, q.dropLat, q.dropLng);
+
+  // Maximum pickup radius in km (drivers must be near the pickup location)
+  const MAX_PICKUP_RADIUS_KM = 50;
 
   const drivers = db
     .prepare(
-      `SELECT dp.id, dp.city, dp.vehicle_type, dp.vehicle_number, dp.rating_avg,
-              dp.rate_per_km, dp.current_lat, dp.current_lng, u.name
+      `SELECT dp.id, dp.city, dp.district, dp.tehsil, dp.vehicle_type, dp.vehicle_number,
+              dp.rating_avg, dp.rate_per_km, dp.current_lat, dp.current_lng,
+              dp.vehicle_make, dp.vehicle_model, dp.avatar_photo, dp.total_reviews,
+              u.name
        FROM driver_profiles dp
        JOIN users u ON u.id = dp.user_id
        WHERE dp.is_online = 1 AND dp.is_verified = 1 AND dp.vehicle_type = ?`
@@ -77,6 +82,12 @@ ridesRouter.post("/search", (req, res) => {
         fare,
       };
     })
+    .filter((d) => {
+      // Proximity check: Driver must be within pickup radius (50km)
+      // or their registered city/tehsil must be mentioned in the pickup text
+      const cityMatch = d.city && q.pickupText.toLowerCase().includes(d.city.toLowerCase());
+      return d.pickupDistanceKm <= MAX_PICKUP_RADIUS_KM || cityMatch;
+    })
     .sort((a, b) => {
       // Primary sort: Drivers whose registered city matches pickup location come first
       const aMatch = q.pickupText.toLowerCase().includes(a.city.toLowerCase()) ? 0 : 1;
@@ -104,13 +115,13 @@ const bookSchema = searchSchema.extend({
  * search results) the ride goes straight to DRIVER_ASSIGNED; otherwise it's
  * left SEARCHING for the dispatch/matching flow to pick up.
  */
-ridesRouter.post("/", requireAuth, (req: AuthedRequest, res) => {
+ridesRouter.post("/", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = bookSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const b = parsed.data;
-  const tripKm = distanceKm(b.pickupLat, b.pickupLng, b.dropLat, b.dropLng);
+  const tripKm = await getRoadDistanceKm(b.pickupLat, b.pickupLng, b.dropLat, b.dropLng);
 
   let driverRate: number | undefined;
   const status = "SEARCHING";
@@ -152,6 +163,56 @@ ridesRouter.post("/", requireAuth, (req: AuthedRequest, res) => {
 
   const ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(id);
   return res.status(201).json(ride);
+});
+
+/**
+ * GET /rides/:id/public-track
+ * Publicly accessible endpoint (no auth required) for family/friends
+ * to monitor a shared live trip for safety and location tracking.
+ */
+ridesRouter.get("/:id/public-track", (req, res) => {
+  const ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id) as any;
+  if (!ride) return res.status(404).json({ error: "Trip not found or expired" });
+
+  let driverInfo: any = null;
+  if (ride.driver_id) {
+    const dProf = db.prepare("SELECT * FROM driver_profiles WHERE id = ?").get(ride.driver_id) as any;
+    if (dProf) {
+      const dUser = db.prepare("SELECT name, phone FROM users WHERE id = ?").get(dProf.user_id) as any;
+      driverInfo = {
+        id: dProf.id,
+        name: dUser?.name || "Verified Driver",
+        phone: dUser?.phone ? dUser.phone.slice(0, 3) + "****" + dUser.phone.slice(-3) : "",
+        city: dProf.city,
+        vehicle_type: dProf.vehicle_type,
+        vehicle_number: dProf.vehicle_number,
+        rating_avg: dProf.rating_avg,
+        vehicle_make: dProf.vehicle_make,
+        vehicle_model: dProf.vehicle_model,
+        avatar_photo: dProf.avatar_photo,
+        current_lat: dProf.current_lat,
+        current_lng: dProf.current_lng,
+      };
+    }
+  }
+
+  // Sanitize public payload (no sensitive OTP or private billing info)
+  return res.json({
+    id: ride.id,
+    status: ride.status,
+    pickup_text: ride.pickup_text,
+    pickup_lat: ride.pickup_lat,
+    pickup_lng: ride.pickup_lng,
+    drop_text: ride.drop_text,
+    drop_lat: ride.drop_lat,
+    drop_lng: ride.drop_lng,
+    distance_km: ride.distance_km,
+    vehicle_type: ride.vehicle_type,
+    ride_type: ride.ride_type,
+    driver: driverInfo,
+    created_at: ride.created_at,
+    updated_at: ride.updated_at,
+  });
 });
 
 /** GET /rides/:id — trip status/tracking screen polls this. */
@@ -320,4 +381,57 @@ ridesRouter.patch("/:id/status", requireAuth, (req: AuthedRequest, res) => {
   );
   const updated = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id);
   return res.json(updated);
+});
+
+/**
+ * GET /rides/:id/messages — returns all chat messages for a ride.
+ */
+ridesRouter.get("/:id/messages", requireAuth, (req: AuthedRequest, res) => {
+  const ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id) as any;
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  const messages = db
+    .prepare("SELECT * FROM ride_messages WHERE ride_id = ? ORDER BY created_at ASC")
+    .all(req.params.id) as any[];
+
+  return res.json(messages);
+});
+
+const messageSchema = z.object({
+  text: z.string().min(1).max(1000),
+});
+
+/**
+ * POST /rides/:id/messages — sends a new chat message.
+ */
+ridesRouter.post("/:id/messages", requireAuth, (req: AuthedRequest, res) => {
+  const parsed = messageSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Message text is required" });
+
+  const ride = db.prepare("SELECT * FROM rides WHERE id = ?").get(req.params.id) as any;
+  if (!ride) return res.status(404).json({ error: "Ride not found" });
+
+  const user = db.prepare("SELECT id, name, role FROM users WHERE id = ?").get(req.userId) as any;
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  const isCustomer = ride.customer_id === req.userId;
+  let isDriver = false;
+  if (ride.driver_id) {
+    const driverProfile = db.prepare("SELECT user_id FROM driver_profiles WHERE id = ?").get(ride.driver_id) as any;
+    if (driverProfile && driverProfile.user_id === req.userId) {
+      isDriver = true;
+    }
+  }
+
+  const senderRole = isCustomer ? "CUSTOMER" : (isDriver || user.role === "DRIVER" ? "DRIVER" : "CUSTOMER");
+  const senderName = user.name || (senderRole === "DRIVER" ? "Driver" : "Passenger");
+  const msgId = nanoid();
+
+  db.prepare(`
+    INSERT INTO ride_messages (id, ride_id, sender_id, sender_role, sender_name, text)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(msgId, req.params.id, req.userId, senderRole, senderName, parsed.data.text.trim());
+
+  const createdMsg = db.prepare("SELECT * FROM ride_messages WHERE id = ?").get(msgId);
+  return res.json(createdMsg);
 });
