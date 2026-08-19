@@ -33,6 +33,9 @@ const UNION_BENEFITS = [
   { icon: "🆘", title: "24x7 Roadside & Medical Aid", desc: "Emergency breakdown and accident relief fund support from fellow drivers." },
 ];
 
+const HP_UNIONS: { id: string; name: string; city: string; district: string }[] = [];
+// ^ placeholder — real data fetched from backend
+
 export default function DriverUnionPage() {
   const router = useRouter();
 
@@ -41,6 +44,8 @@ export default function DriverUnionPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showApplyModal, setShowApplyModal] = useState(false);
+  const [liveUnions, setLiveUnions] = useState<{ id: string; name: string; city: string; district: string; short_code?: string }[]>([]);
+  const [unionsLoading, setUnionsLoading] = useState(false);
 
   // Form fields for in-app union application
   const [district, setDistrict] = useState("Shimla");
@@ -48,12 +53,15 @@ export default function DriverUnionPage() {
   const [licenseNo, setLicenseNo] = useState("");
   const [selectedDocs, setSelectedDocs] = useState<string[]>(["RC Book", "Driving License", "Insurance"]);
   const [note, setNote] = useState("");
+  const [selectedUnion, setSelectedUnion] = useState<typeof HP_UNIONS[0] | null>(null);
+  const [unionSearch, setUnionSearch] = useState("");
+  const [showUnionDropdown, setShowUnionDropdown] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const fetchUnionStatus = useCallback(async (driverPhone: string, driverPlate: string) => {
     try {
-      const res = await fetch("http://localhost:4000/union/applications");
+      const res = await fetch("http://localhost:4001/union/applications");
       if (res.ok) {
         const data = await res.json();
         const apps: UnionAppRecord[] = data.applications || [];
@@ -92,6 +100,23 @@ export default function DriverUnionPage() {
       return;
     }
 
+    // Fetch registered unions from backend
+    setUnionsLoading(true);
+    fetch("http://localhost:4001/union/list")
+      .then(r => r.ok ? r.json() : { unions: [] })
+      .then(data => {
+        const u = (data.unions || []).map((row: any) => ({
+          id: row.id,
+          name: row.name,
+          short_code: row.short_code,
+          city: row.city || row.district,
+          district: row.district,
+        }));
+        setLiveUnions(u);
+      })
+      .catch(() => {})
+      .finally(() => setUnionsLoading(false));
+
     driverApi
       .getProfile()
       .then((data) => {
@@ -113,12 +138,17 @@ export default function DriverUnionPage() {
     setErrorMsg(null);
 
     const appId = "APP-" + Date.now().toString().slice(-6);
+    if (!selectedUnion) {
+      setErrorMsg("Please select a union to apply to.");
+      setSubmitting(false);
+      return;
+    }
     const newApp: UnionAppRecord = {
       id: appId,
       name: driver.name,
       phone: driver.phone.replace(/\D/g, ""),
-      city: district,
-      district,
+      city: selectedUnion.city,
+      district: selectedUnion.district,
       vehicle: driver.vehicle_type,
       plate: driver.vehicle_number.toUpperCase(),
       experience,
@@ -127,13 +157,13 @@ export default function DriverUnionPage() {
       model: (driver as any).vehicle_model || "",
       year: String((driver as any).vehicle_year || ""),
       docs: selectedDocs,
-      note: note || "Applied from Cab8 Driver App",
+      note: note || `Applied to ${selectedUnion.name} via Cab8 Driver App`,
       applied: new Date().toISOString().split("T")[0],
       status: "PENDING",
     };
 
     try {
-      await fetch("http://localhost:4000/union/apply", {
+      await fetch("http://localhost:4001/union/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newApp),
@@ -164,6 +194,26 @@ export default function DriverUnionPage() {
     setSelectedDocs((prev) =>
       prev.includes(doc) ? prev.filter((d) => d !== doc) : [...prev, doc]
     );
+  }
+
+  async function withdrawApplication() {
+    if (!driver || !unionApp) return;
+    // Remove from backend
+    try {
+      await fetch(`http://localhost:4001/union/applications/${unionApp.id}`, { method: "DELETE" });
+    } catch { /* ignore */ }
+    // Remove from localStorage
+    if (typeof window !== "undefined") {
+      const apps: UnionAppRecord[] = JSON.parse(window.localStorage.getItem("union_applications") || "[]");
+      const filtered = apps.filter(
+        (a) => a.phone.replace(/\D/g, "") !== driver.phone.replace(/\D/g, "") && a.plate.toUpperCase() !== driver.vehicle_number.toUpperCase()
+      );
+      window.localStorage.setItem("union_applications", JSON.stringify(filtered));
+      window.dispatchEvent(new Event("storage"));
+    }
+    setUnionApp(null);
+    setSuccessMsg(null);
+    setErrorMsg(null);
   }
 
   if (loading) {
@@ -281,11 +331,20 @@ export default function DriverUnionPage() {
             </div>
 
             {unionApp.status === "PENDING" && (
-              <div className="mt-4 rounded-xl bg-amber/10 border border-amber/25 p-3 flex items-start gap-2.5">
-                <span className="text-amber text-base">ℹ️</span>
-                <p className="text-xs text-amber-200/90 leading-relaxed">
-                  Your application is currently being reviewed by the Himachal Pradesh Taxi Union district office. You will receive an SMS update upon verification.
-                </p>
+              <div className="mt-4 space-y-3">
+                <div className="rounded-xl bg-amber/10 border border-amber/25 p-3 flex items-start gap-2.5">
+                  <span className="text-amber text-base">ℹ️</span>
+                  <p className="text-xs text-amber-200/90 leading-relaxed">
+                    Your application is currently being reviewed by the Himachal Pradesh Taxi Union district office. You will receive an SMS update upon verification.
+                  </p>
+                </div>
+                <button
+                  onClick={withdrawApplication}
+                  className="w-full py-2.5 rounded-xl font-display font-bold text-xs text-red-300 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <span>✕</span>
+                  <span>Withdraw &amp; Re-submit Application</span>
+                </button>
               </div>
             )}
           </div>
@@ -393,6 +452,67 @@ export default function DriverUnionPage() {
             )}
 
             <form onSubmit={handleApplySubmit} className="space-y-3.5 text-xs">
+
+              {/* Union Selector */}
+              <div>
+                <label className="text-muted block mb-1 font-semibold">Select Union *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={unionSearch}
+                    onChange={(e) => { setUnionSearch(e.target.value); setShowUnionDropdown(true); setSelectedUnion(null); }}
+                    onFocus={() => setShowUnionDropdown(true)}
+                    placeholder={unionsLoading ? "Loading unions..." : liveUnions.length === 0 ? "No unions registered yet" : "Search union by name or district..."}
+                    disabled={unionsLoading || liveUnions.length === 0}
+                    className="w-full rounded-xl bg-navy-deep border border-amber/40 px-3.5 py-2.5 text-white pr-8 focus:outline-none focus:border-amber disabled:opacity-50"
+                  />
+                  <span className="absolute right-3 top-2.5 text-amber text-sm">{unionsLoading ? "⏳" : "🔍"}</span>
+
+                  {showUnionDropdown && liveUnions.length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-xl bg-navy-deep border border-navy-border shadow-2xl max-h-48 overflow-y-auto">
+                      {liveUnions
+                        .filter(u =>
+                          unionSearch === "" ||
+                          u.name.toLowerCase().includes(unionSearch.toLowerCase()) ||
+                          u.district.toLowerCase().includes(unionSearch.toLowerCase()) ||
+                          u.city.toLowerCase().includes(unionSearch.toLowerCase())
+                        )
+                        .map(u => (
+                          <button
+                            type="button"
+                            key={u.id}
+                            onClick={() => { setSelectedUnion(u); setUnionSearch(u.name); setShowUnionDropdown(false); setDistrict(u.district); }}
+                            className="w-full text-left px-3.5 py-2.5 hover:bg-amber/10 flex items-center justify-between group"
+                          >
+                            <div>
+                              <span className="text-white font-semibold block">{u.name}</span>
+                              <span className="text-muted text-[10px]">📍 {u.district} · {u.city}</span>
+                            </div>
+                            <span className="text-[10px] font-mono text-amber/60 group-hover:text-amber">{(u as any).short_code || u.id}</span>
+                          </button>
+                        ))
+                      }
+                      {liveUnions.filter(u =>
+                        unionSearch === "" ||
+                        u.name.toLowerCase().includes(unionSearch.toLowerCase()) ||
+                        u.district.toLowerCase().includes(unionSearch.toLowerCase()) ||
+                        u.city.toLowerCase().includes(unionSearch.toLowerCase())
+                      ).length === 0 && (
+                        <div className="px-4 py-3 text-muted text-center">No union found matching your search</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {liveUnions.length === 0 && !unionsLoading && (
+                  <p className="mt-1.5 text-[11px] text-amber/70">No unions are registered yet. Ask your union admin to register first.</p>
+                )}
+                {selectedUnion && (
+                  <div className="mt-1.5 flex items-center gap-2 text-[11px] text-green">
+                    <span>✓</span>
+                    <span>Selected: <strong>{selectedUnion.name}</strong> — {selectedUnion.district}</span>
+                  </div>
+                )}
+              </div>
               <div>
                 <label className="text-muted block mb-1">Full Name (from driver profile)</label>
                 <input

@@ -103,7 +103,7 @@ export default function DriverLandingPage() {
         {/* ── PROMINENT TAXI UNION BANNER ── */}
         <div className="mt-6">
           <Link
-            href="/union/apply"
+            href="/driver/union"
             className="w-full flex items-center gap-4 text-left transition-all duration-200 group block"
             style={{
               background: "linear-gradient(135deg, rgba(217,119,6,0.18), rgba(245,158,11,0.08))",

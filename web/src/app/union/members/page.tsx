@@ -91,7 +91,7 @@ export default function UnionMembersPage() {
   const [duesFilter,   setDues]         = useState("ALL");
   const [cityFilter,   setCity]         = useState("ALL");
   const [selected,     setSelected]     = useState<string | null>(null);
-  const [members,      setMembers]      = useState<Member[]>(SEED_MEMBERS);
+  const [members,      setMembers]      = useState<Member[]>([]);
 
   // Direct Add Modal State (Union Admin)
   const [showAddModal,      setShowAddModal]      = useState(false);
@@ -188,13 +188,8 @@ export default function UnionMembersPage() {
         source: "live",
       }));
 
-      // Combine live approved members + seed members (avoiding duplicate IDs)
-      const liveIds = new Set(liveMembers.map(m => m.id));
-      const combined = [
-        ...liveMembers,
-        ...SEED_MEMBERS.filter(m => !liveIds.has(m.id)),
-      ];
-      setMembers(combined);
+      // Only show real approved applicants — no demo/seed data
+      setMembers(liveMembers);
     }
 
     loadLiveApproved();
@@ -318,11 +313,15 @@ export default function UnionMembersPage() {
             background: "#0D1B2E", border: "1px dashed #1A2E45", borderRadius: 20,
             padding: "56px 24px", textAlign: "center",
           }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>👤</div>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🔰</div>
             <p style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>
-              No members found
+              {members.length === 0 ? "No approved members yet" : "No members match your filters"}
             </p>
-            <p style={{ fontSize: 13, color: "#6B7280" }}>Try adjusting your search or filters</p>
+            <p style={{ fontSize: 13, color: "#6B7280" }}>
+              {members.length === 0
+                ? "Once a driver's join request is approved, they will appear here"
+                : "Try adjusting your search or filters"}
+            </p>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -334,22 +333,20 @@ export default function UnionMembersPage() {
               return (
                 <div
                   key={m.id}
-                  className={`m-card ${m.source === "live" ? "live" : ""}`}
-                  style={{ animationDelay: `${i * 40}ms`, cursor: "pointer", borderColor: isSelected ? "rgba(245,158,11,0.4)" : m.source === "live" ? "rgba(16,185,129,0.35)" : "#1A2E45" }}
+                  className={`m-card live`}
+                  style={{ animationDelay: `${i * 40}ms`, cursor: "pointer", borderColor: isSelected ? "rgba(245,158,11,0.4)" : "rgba(16,185,129,0.35)" }}
                   onClick={() => setSelected(isSelected ? null : m.id)}
                 >
-                  {/* Live badge for approved drivers */}
-                  {m.source === "live" && (
-                    <div style={{
-                      display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 8,
-                      padding: "2px 8px", borderRadius: 999,
-                      background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
-                      fontSize: 9, fontFamily: "var(--font-mono)", fontWeight: 700, color: "#10B981",
-                    }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", animation: "pulse 1.5s ease infinite", display: "inline-block" }} />
-                      NEWLY APPROVED MEMBER
-                    </div>
-                  )}
+                  {/* Approved member badge */}
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 8,
+                    padding: "2px 8px", borderRadius: 999,
+                    background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
+                    fontSize: 9, fontFamily: "var(--font-mono)", fontWeight: 700, color: "#10B981",
+                  }}>
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", animation: "pulse 1.5s ease infinite", display: "inline-block" }} />
+                    APPROVED MEMBER
+                  </div>
 
                   {/* Top row */}
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>

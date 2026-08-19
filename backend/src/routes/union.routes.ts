@@ -114,3 +114,47 @@ unionRouter.post("/approve/:id", (req, res) => {
     return res.status(500).json({ error: error.message || "Failed to update application status" });
   }
 });
+
+// ── DELETE /api/union/applications/:id ──────────────────────────────────────
+unionRouter.delete("/applications/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare("DELETE FROM union_applications WHERE id = ?").run(id);
+    return res.json({ success: true });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to delete application" });
+  }
+});
+
+// ── GET /api/unions ───────────────────────────────────────────────────────────
+unionRouter.get("/list", (req, res) => {
+  try {
+    const rows = db.prepare("SELECT * FROM unions ORDER BY registered_at DESC").all() as any[];
+    return res.json({ unions: rows });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to fetch unions" });
+  }
+});
+
+// ── POST /api/union/register ──────────────────────────────────────────────────
+unionRouter.post("/register", (req, res) => {
+  try {
+    const { name, short_code, district, city, admin_name, admin_phone } = req.body;
+    if (!name || !short_code || !district) {
+      return res.status(400).json({ error: "name, short_code, and district are required." });
+    }
+    const id = "UNION-" + Date.now().toString().slice(-8);
+    const existing = db.prepare("SELECT id FROM unions WHERE short_code = ?").get(short_code.toUpperCase()) as any;
+    if (existing) {
+      return res.json({ success: true, id: existing.id, message: "Union already registered." });
+    }
+    db.prepare(
+      `INSERT INTO unions (id, name, short_code, district, city, admin_name, admin_phone)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, name, short_code.toUpperCase(), district, city || district, admin_name || null, admin_phone || null);
+    return res.status(201).json({ success: true, id, message: "Union registered successfully." });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to register union" });
+  }
+});
+

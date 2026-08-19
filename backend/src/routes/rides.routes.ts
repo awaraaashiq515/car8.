@@ -43,7 +43,15 @@ ridesRouter.post("/search", async (req, res) => {
               u.name
        FROM driver_profiles dp
        JOIN users u ON u.id = dp.user_id
-       WHERE dp.is_online = 1 AND dp.is_verified = 1 AND dp.vehicle_type = ?`
+       WHERE dp.is_online = 1
+         AND dp.is_verified = 1
+         AND dp.vehicle_type = ?
+         AND dp.id NOT IN (
+           SELECT DISTINCT driver_id
+           FROM rides
+           WHERE driver_id IS NOT NULL
+             AND status IN ('CONFIRMED', 'DRIVER_ASSIGNED', 'ARRIVED', 'ONGOING')
+         )`
     )
     .all(q.vehicleType) as any[];
 

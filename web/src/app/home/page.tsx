@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { RideType, VehicleType, clearToken, getUserName, resolvePlaceCoordinates } from "@/lib/api";
 import LocationInput from "@/components/LocationInput";
+import LocationPermissionModal from "@/components/LocationPermissionModal";
+import { checkLocationPermission, getCurrentCoordinates, reverseGeocode } from "@/lib/geo";
 
 type VT = VehicleType;
 type RT = RideType;
@@ -49,6 +51,9 @@ export default function CustomerHomePage() {
   const [userName,     setUserNameVal]  = useState<string | null>(null);
   const [showMenu,     setShowMenu]     = useState(false);
   const [error,        setError]        = useState<string | null>(null);
+  const [showLocModal, setShowLocModal] = useState(false);
+  const [autoLocating, setAutoLocating] = useState(false);
+  const [locToast,     setLocToast]     = useState<string | null>(null);
 
   useEffect(() => {
     const token = window.localStorage.getItem("cab8_token");
@@ -56,7 +61,49 @@ export default function CustomerHomePage() {
     if (!token) { router.replace("/login"); return; }
     if (role === "DRIVER") { router.replace("/driver/dashboard"); return; }
     setUserNameVal(getUserName());
+
+    // Automatic Ola/Uber style permission check and auto-location fetch
+    const initLocation = async () => {
+      try {
+        const perm = await checkLocationPermission();
+        if (perm === "granted") {
+          setAutoLocating(true);
+          const coords = await getCurrentCoordinates();
+          setPickupCoords(coords);
+          const addr = await reverseGeocode(coords.lat, coords.lng);
+          setPickup(addr);
+          setLocToast(`📍 Pickup set to: ${addr}`);
+          setTimeout(() => setLocToast(null), 4000);
+        } else if (perm === "prompt") {
+          const prompted = window.sessionStorage.getItem("cab8_loc_prompted");
+          if (!prompted) {
+            // Small delay to make sure UI is loaded smoothly before popping modal
+            setTimeout(() => setShowLocModal(true), 600);
+          }
+        }
+      } catch {
+        /* ignore error */
+      } finally {
+        setAutoLocating(false);
+      }
+    };
+
+    initLocation();
   }, [router]);
+
+  const handleLocationDetected = (address: string, coords: { lat: number; lng: number }) => {
+    setPickup(address);
+    setPickupCoords(coords);
+    setShowLocModal(false);
+    window.sessionStorage.setItem("cab8_loc_prompted", "true");
+    setLocToast(`📍 Pickup set to: ${address}`);
+    setTimeout(() => setLocToast(null), 4000);
+  };
+
+  const handleDismissLocModal = () => {
+    setShowLocModal(false);
+    window.sessionStorage.setItem("cab8_loc_prompted", "true");
+  };
 
   function handleSearch() {
     if (!pickup) { setError("Please select or enter a pickup location."); return; }
@@ -90,6 +137,15 @@ export default function CustomerHomePage() {
         <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[500px] h-[300px] rounded-full opacity-25"
           style={{ background: "radial-gradient(ellipse, #2563EB 0%, transparent 65%)" }} />
       </div>
+
+      {/* ── Auto-Location Toast Indicator ── */}
+      {locToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[250] max-w-sm w-[90%] bg-[#0D1B2E] border border-cyan-500/50 rounded-2xl px-4 py-2.5 shadow-2xl flex items-center gap-2.5 text-xs text-white animate-fade-down">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+          <span className="truncate flex-1">{locToast}</span>
+          <button onClick={() => setLocToast(null)} className="text-slate-400 hover:text-white text-xs">✕</button>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════
           TOP BAR
@@ -391,6 +447,14 @@ export default function CustomerHomePage() {
           ))}
         </div>
       </nav>
+
+      {/* ── Automatic Ola/Uber Location Permission Modal ── */}
+      {showLocModal && (
+        <LocationPermissionModal
+          onLocationDetected={handleLocationDetected}
+          onDismiss={handleDismissLocModal}
+        />
+      )}
 
     </div>
   );

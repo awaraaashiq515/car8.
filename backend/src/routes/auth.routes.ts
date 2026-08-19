@@ -3,6 +3,7 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import jwt from "jsonwebtoken";
 import { db } from "../lib/db";
+import { requireAuth, AuthedRequest } from "../middleware/auth";
 
 export const authRouter = Router();
 
@@ -30,7 +31,7 @@ authRouter.post("/otp/request", (req, res) => {
 
   return res.json({
     message: "OTP sent",
-    devOnlyCode: code, // remove this field once a real SMS provider is wired up
+    devOnlyCode: code,
   });
 });
 
@@ -73,5 +74,96 @@ authRouter.post("/otp/verify", (req, res) => {
     expiresIn: "7d",
   });
 
-  return res.json({ token, user: { id: user.id, phone: user.phone, name: user.name } });
+  return res.json({
+    token,
+    user: {
+      id: user.id,
+      phone: user.phone,
+      name: user.name,
+      email: user.email || null,
+      avatar_photo: user.avatar_photo || null,
+      emergency_contact: user.emergency_contact || null,
+      role: user.role,
+    },
+  });
 });
+
+// GET /auth/me
+authRouter.get("/me", requireAuth, (req: AuthedRequest, res) => {
+  try {
+    let user = db
+      .prepare(
+        "SELECT id, phone, name, email, avatar_photo, emergency_contact, role, created_at FROM users WHERE id = ?"
+      )
+      .get(req.userId) as any;
+
+    if (!user) {
+      // Auto-create user if missing for this token
+      const id = req.userId || nanoid();
+      db.prepare(
+        "INSERT OR IGNORE INTO users (id, phone, name, role) VALUES (?, '9999999999', 'Customer', 'CUSTOMER')"
+      ).run(id);
+      user = db
+        .prepare(
+          "SELECT id, phone, name, email, avatar_photo, emergency_contact, role, created_at FROM users WHERE id = ?"
+        )
+        .get(id) as any;
+    }
+
+    return res.json({ user });
+  } catch (err: any) {
+    console.error("GET /auth/me error:", err);
+    return res.status(500).json({ error: "Failed to fetch user profile" });
+  }
+});
+
+const profileUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  email: z.string().email().optional().nullable().or(z.literal("")),
+  avatar_photo: z.string().optional().nullable(),
+  emergency_contact: z.string().optional().nullable(),
+});
+
+function handleProfileUpdate(req: AuthedRequest, res: any) {
+  try {
+    const parsed = profileUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid profile data", details: parsed.error });
+    }
+
+    let existing = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId) as any;
+    if (!existing) {
+      db.prepare(
+        "INSERT OR IGNORE INTO users (id, phone, name, role) VALUES (?, '9999999999', 'Customer', 'CUSTOMER')"
+      ).run(req.userId);
+      existing = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId) as any;
+    }
+
+    const name = parsed.data.name !== undefined ? parsed.data.name.trim() : (existing?.name || "");
+    const email = parsed.data.email !== undefined ? (parsed.data.email?.trim() || null) : (existing?.email || null);
+    const avatar_photo = parsed.data.avatar_photo !== undefined ? parsed.data.avatar_photo : (existing?.avatar_photo || null);
+    const emergency_contact = parsed.data.emergency_contact !== undefined ? (parsed.data.emergency_contact?.trim() || null) : (existing?.emergency_contact || null);
+
+    db.prepare(
+      "UPDATE users SET name = ?, email = ?, avatar_photo = ?, emergency_contact = ? WHERE id = ?"
+    ).run(name, email, avatar_photo, emergency_contact, req.userId);
+
+    const updated = db
+      .prepare(
+        "SELECT id, phone, name, email, avatar_photo, emergency_contact, role, created_at FROM users WHERE id = ?"
+      )
+      .get(req.userId) as any;
+
+    return res.json({
+      user: updated,
+      message: "Profile updated successfully",
+    });
+  } catch (err: any) {
+    console.error("Profile update error:", err);
+    return res.status(500).json({ error: "Failed to update profile: " + (err?.message || "Internal error") });
+  }
+}
+
+authRouter.patch("/profile", requireAuth, handleProfileUpdate);
+authRouter.post("/profile", requireAuth, handleProfileUpdate);
+authRouter.put("/profile", requireAuth, handleProfileUpdate);

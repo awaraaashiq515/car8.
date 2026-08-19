@@ -228,7 +228,24 @@ export default function UnionRegisterPage() {
       window.localStorage.setItem("cab8_union_token", "union_token_" + Date.now());
       window.localStorage.setItem("cab8_union_name", unionName);
       window.localStorage.setItem("cab8_union_id", unionShort.toUpperCase());
+      window.localStorage.setItem("cab8_union_district", district);
     }
+
+    // Register union in backend DB so drivers can find it
+    try {
+      await fetch("http://localhost:4001/union/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: unionName,
+          short_code: unionShort.toUpperCase(),
+          district,
+          city: district,
+          admin_name: adminName,
+          admin_phone: adminPhone,
+        }),
+      });
+    } catch { /* ignore network error */ }
 
     setLoading(false);
     router.push("/union/dashboard");

@@ -260,13 +260,13 @@ export default function UnionApplyPage() {
             </ul>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Link href="/driver/dashboard" style={{
+            <Link href="/union/dashboard" style={{
               display: "block", padding: "14px 20px", borderRadius: 14,
-              background: "linear-gradient(135deg, #2563EB, #06B6D4)", color: "#FFFFFF",
+              background: "linear-gradient(135deg, #D97706, #F59E0B)", color: "#1A0A00",
               fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 700, textDecoration: "none",
-              boxShadow: "0 4px 20px rgba(37,99,235,0.4)",
+              boxShadow: "0 4px 20px rgba(245,158,11,0.4)",
             }}>
-              🚕 Return to Driver Dashboard →
+              🔰 Return to Union Portal →
             </Link>
             <button onClick={() => { setDone(false); setStep(0); }} style={{
               display: "block", width: "100%", padding: "12px 20px", borderRadius: 14,
@@ -304,20 +304,20 @@ export default function UnionApplyPage() {
 
         {/* Top Navigation Bar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <Link href="/driver/dashboard" style={{
+          <Link href="/union/dashboard" style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             fontSize: 13, fontFamily: "var(--font-mono)", color: "#94A3B8",
             textDecoration: "none", padding: "6px 12px", borderRadius: 10,
             background: "rgba(26,46,69,0.5)", border: "1px solid #1A2E45",
             transition: "all 0.2s"
           }}>
-            ← Driver Dashboard
+            ← Union Portal
           </Link>
-          <Link href="/driver" style={{
+          <Link href="/union/dashboard" style={{
             fontSize: 12, fontFamily: "var(--font-mono)", color: "#F59E0B",
             textDecoration: "none", fontWeight: 700
           }}>
-            Cab8 🚕
+            Taxi Union 🔰
           </Link>
         </div>
 

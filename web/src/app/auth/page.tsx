@@ -14,7 +14,7 @@ type Stage = "form" | "otp";
 function RegisterForm() {
   const router      = useRouter();
   const searchParams = useSearchParams();
-  const redirect    = searchParams.get("redirect") || "/";
+  const redirect    = searchParams.get("redirect") || "/home";
 
   const [name,    setName]    = useState("");
   const [phone,   setPhone]   = useState("");
@@ -158,7 +158,7 @@ function RegisterForm() {
 function LoginForm() {
   const router      = useRouter();
   const searchParams = useSearchParams();
-  const redirect    = searchParams.get("redirect") || "/";
+  const redirect    = searchParams.get("redirect") || "/home";
 
   const [phone,   setPhone]   = useState("");
   const [code,    setCode]    = useState("");

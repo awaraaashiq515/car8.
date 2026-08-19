@@ -1,4 +1,14 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+export function getApiUrl(): string {
+  if (typeof window !== "undefined") {
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+      return envUrl;
+    }
+    const hostname = window.location.hostname || "localhost";
+    return `http://${hostname}:4001`;
+  }
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:4001";
+}
 
 export type DriverOnlineStatus = "ONLINE" | "OFFLINE";
 
@@ -97,6 +107,45 @@ export interface DriverReviewsResponse {
   reviews: DriverReview[];
 }
 
+export interface DriverPublicProfile {
+  id: string;
+  driverName: string;
+  city: string;
+  district?: string | null;
+  tehsil?: string | null;
+  village?: string | null;
+  standName?: string | null;
+  vehicleType: VehicleType;
+  vehicleNumber: string;
+  vehicleMake?: string | null;
+  vehicleModel?: string | null;
+  vehicleYear?: number | null;
+  seats: number;
+  fuelType?: string | null;
+  acAvailable: boolean;
+  avatarPhoto?: string | null;
+  vehiclePhotos: string[];
+  experience?: string | null;
+  permitZones?: string | null;
+  isVerified: boolean;
+  rcVerified: boolean;
+  licenseVerified: boolean;
+  aadharVerified: boolean;
+  ratingAvg: number;
+  totalReviews: number;
+  completedTrips: number;
+  memberSince?: string | null;
+  breakdown: Record<number, number>;
+  reviews: {
+    id?: string;
+    customer_name?: string;
+    rating: number;
+    comment?: string | null;
+    tags?: string[];
+    created_at: string;
+  }[];
+}
+
 export interface DriverProfile {
   id: string;
   user_id: string;
@@ -185,7 +234,8 @@ export function clearDriverToken() {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
+  const baseUrl = getApiUrl();
+  const res = await fetch(`${baseUrl}${path}`, {
     cache: "no-store",
     ...options,
     headers: {
@@ -259,13 +309,37 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMyRides: () => request<Ride[]>("/rides"),
+  getProfile: () => request<{ user: UserProfile }>("/auth/me"),
+  updateProfile: (data: {
+    name?: string;
+    email?: string | null;
+    avatar_photo?: string | null;
+    emergency_contact?: string | null;
+  }) =>
+    request<{ user: UserProfile; message: string }>("/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   getMessages: (rideId: string) => request<RideMessage[]>(`/rides/${rideId}/messages`),
   sendMessage: (rideId: string, text: string) =>
     request<RideMessage>(`/rides/${rideId}/messages`, {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+  getPublicDriverProfile: (driverId: string) =>
+    request<DriverPublicProfile>(`/driver/${driverId}/public-profile`),
 };
+
+export interface UserProfile {
+  id: string;
+  phone: string;
+  name: string | null;
+  email?: string | null;
+  avatar_photo?: string | null;
+  emergency_contact?: string | null;
+  role: string;
+  created_at: string;
+}
 
 export interface RideMessage {
   id: string;
@@ -280,7 +354,8 @@ export interface RideMessage {
 /** Driver portal API — uses driver JWT token */
 async function driverRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getDriverToken();
-  const res = await fetch(`${API_URL}${path}`, {
+  const baseUrl = getApiUrl();
+  const res = await fetch(`${baseUrl}${path}`, {
     cache: "no-store",
     ...options,
     headers: {

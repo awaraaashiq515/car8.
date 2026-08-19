@@ -3,11 +3,14 @@
 -- and STRING-based enums (swap to native ENUM / UUID types on Postgres).
 
 CREATE TABLE IF NOT EXISTS users (
-  id         TEXT PRIMARY KEY,
-  phone      TEXT NOT NULL UNIQUE,
-  name       TEXT,
-  role       TEXT NOT NULL DEFAULT 'CUSTOMER', -- CUSTOMER | DRIVER | ADMIN
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id                TEXT PRIMARY KEY,
+  phone             TEXT NOT NULL UNIQUE,
+  name              TEXT,
+  email             TEXT,
+  avatar_photo      TEXT,
+  emergency_contact TEXT,
+  role              TEXT NOT NULL DEFAULT 'CUSTOMER', -- CUSTOMER | DRIVER | ADMIN
+  created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS driver_profiles (

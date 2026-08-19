@@ -12,8 +12,18 @@ const schemaPath = path.join(__dirname, "schema.sql");
 const schemaSql = fs.readFileSync(schemaPath, "utf-8");
 db.exec(schemaSql);
 
-// Migration: Ensure all extended driver_profiles and rides columns exist
+// Migration: Ensure all extended users, driver_profiles and rides columns exist
 try {
+  const userCols = (db.prepare("PRAGMA table_info(users)").all() as any[]).map(c => c.name);
+  const addUserIfMissing = (col: string, def: string) => {
+    if (!userCols.includes(col)) {
+      try { db.exec(`ALTER TABLE users ADD COLUMN ${col} ${def}`); } catch {}
+    }
+  };
+  addUserIfMissing("avatar_photo", "TEXT");
+  addUserIfMissing("email", "TEXT");
+  addUserIfMissing("emergency_contact", "TEXT");
+
   const tableInfo = db.prepare("PRAGMA table_info(rides)").all() as any[];
   const hasOtp = tableInfo.some((col) => col.name === "start_otp");
   if (!hasOtp) {

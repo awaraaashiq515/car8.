@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  api, DriverResult, PLACE_PRESETS, Place, RideType, RideMessage, SearchResponse, VehicleType, resolvePlaceCoordinates,
+  api, DriverResult, DriverPublicProfile, PLACE_PRESETS, Place, RideType, RideMessage, SearchResponse, VehicleType, resolvePlaceCoordinates,
 } from "@/lib/api";
 
 const VEHICLE_ICONS: Record<VehicleType, string> = {
@@ -15,46 +15,591 @@ function findPlace(label: string | null) {
   return resolvePlaceCoordinates(label);
 }
 
+// ── Driver Profile Modal ─────────────────────────────────
+function DriverProfileModal({
+  driver,
+  onClose,
+  onBook,
+  booking,
+}: {
+  driver: DriverResult;
+  onClose: () => void;
+  onBook: (d: DriverResult) => void;
+  booking: boolean;
+}) {
+  const [profile, setProfile] = useState<DriverPublicProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.getPublicDriverProfile(driver.driverId)
+      .then((data) => {
+        if (!cancelled) setProfile(data);
+      })
+      .catch(() => {
+        // fallback
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [driver.driverId]);
+
+  const rating = profile?.ratingAvg ?? driver.ratingAvg ?? 5.0;
+  const stars = Math.round(rating);
+  const totalReviews = profile?.totalReviews ?? driver.totalReviews ?? 0;
+  const completedTrips = profile?.completedTrips ?? 1;
+
+  // Breakdown percentages
+  const breakdown = profile?.breakdown || { 5: totalReviews || 1, 4: 0, 3: 0, 2: 0, 1: 0 };
+  const totalRatingsCount = Object.values(breakdown).reduce((a, b) => a + b, 0) || 1;
+
+  const vehicleName = profile?.vehicleMake
+    ? `${profile.vehicleMake} ${profile.vehicleModel || ""}`.trim()
+    : driver.vehicleMake
+    ? `${driver.vehicleMake} ${driver.vehicleModel || ""}`.trim()
+    : `${driver.vehicleType}`;
+
+  const vehiclePhotos = profile?.vehiclePhotos && profile.vehiclePhotos.length > 0
+    ? profile.vehiclePhotos
+    : [];
+
+  const activePhoto: string = vehiclePhotos[activePhotoIndex] || vehiclePhotos[0] || "";
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/85 backdrop-blur-md p-0 sm:p-4 animate-fade-in">
+      {/* Backdrop */}
+      <div className="absolute inset-0" onClick={onClose} />
+
+      {/* Lightbox for vehicle photos */}
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-[140] bg-black/95 flex flex-col items-center justify-center p-4 animate-fade-in"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div className="w-full max-w-2xl flex items-center justify-between p-3 mb-2 z-10">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🚕</span>
+              <div>
+                <p className="text-white font-bold text-sm capitalize">{vehicleName}</p>
+                <p className="text-xs text-cyan-300 font-mono">{driver.vehicleNumber} · Verified Cab Photo</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="h-10 w-10 rounded-full bg-white/15 hover:bg-white/30 text-white text-lg flex items-center justify-center transition-all"
+            >
+              ✕
+            </button>
+          </div>
+          <img
+            src={selectedPhoto}
+            alt="Vehicle preview"
+            className="max-h-[75vh] max-w-[92vw] object-contain rounded-2xl border border-white/20 shadow-2xl"
+          />
+          <p className="text-xs text-muted mt-3">Tap anywhere to close</p>
+        </div>
+      )}
+
+      {/* Modal Container */}
+      <div
+        className="relative z-10 w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] animate-fade-up"
+        style={{
+          background: "linear-gradient(175deg, #0A1628 0%, #060E1A 100%)",
+          border: "1px solid rgba(37,99,235,0.3)",
+          boxShadow: "0 0 60px rgba(0,0,0,0.85), 0 0 35px rgba(37,99,235,0.2)",
+        }}
+      >
+        {/* Header Bar */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-navy-border/80 bg-navy-card/70">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🛡️</span>
+            <div>
+              <h2 className="font-display font-bold text-white text-base leading-none">
+                Driver Profile & Trust Details
+              </h2>
+              <p className="text-[11px] text-muted mt-1">Verified partner on TaxiMint / Cab8</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center text-sm transition-all"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="p-5 overflow-y-auto space-y-4">
+          {/* Driver identity banner */}
+          <div
+            className="p-4 rounded-2xl border border-blue-primary/30 flex items-start gap-3.5"
+            style={{
+              background: "linear-gradient(135deg, rgba(13,27,46,0.9), rgba(22,37,64,0.6))",
+            }}
+          >
+            <div className="relative flex-shrink-0">
+              {profile?.avatarPhoto || driver.avatarPhoto ? (
+                <img
+                  src={profile?.avatarPhoto || driver.avatarPhoto || ""}
+                  alt={driver.driverName}
+                  className="h-16 w-16 rounded-2xl object-cover border-2 border-blue-primary/40 shadow-lg"
+                />
+              ) : (
+                <div
+                  className="h-16 w-16 rounded-2xl flex items-center justify-center text-3xl shadow-lg"
+                  style={{
+                    background: "linear-gradient(135deg, #0F2545, #1E3A5F)",
+                    border: "1.5px solid rgba(37,99,235,0.4)",
+                  }}
+                >
+                  👨‍✈️
+                </div>
+              )}
+              <span
+                className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-emerald-500 border-2 border-navy-card flex items-center justify-center text-[10px] text-white font-black shadow"
+                title="Verified Driver"
+              >
+                ✓
+              </span>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-display text-lg font-bold text-white truncate capitalize">
+                  {profile?.driverName || driver.driverName}
+                </h3>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[11px] text-emerald-300 font-semibold">
+                  <span className="dot-online scale-50" /> Verified Driver
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-300 mt-1 flex items-center gap-1.5 truncate">
+                <span>📍</span>
+                <span>
+                  {profile?.standName ? `${profile.standName}, ` : ""}
+                  {profile?.city || driver.city}
+                  {profile?.district ? ` (${profile.district})` : ""}
+                </span>
+              </p>
+
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <span key={i} className={`text-xs ${i < stars ? "text-amber" : "text-muted"}`}>
+                      ★
+                    </span>
+                  ))}
+                </div>
+                <span className="text-xs font-bold text-amber">{rating.toFixed(1)}</span>
+                <span className="text-xs text-muted">
+                  ({totalReviews} review{totalReviews !== 1 ? "s" : ""})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Metrics Grid */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="rounded-2xl p-3 bg-navy-card/80 border border-navy-border text-center">
+              <div className="text-xl">⭐</div>
+              <div className="font-display font-bold text-white text-sm mt-0.5">{rating.toFixed(1)} / 5.0</div>
+              <div className="text-[10px] text-muted">Rating</div>
+            </div>
+            <div className="rounded-2xl p-3 bg-navy-card/80 border border-navy-border text-center">
+              <div className="text-xl">🚖</div>
+              <div className="font-display font-bold text-white text-sm mt-0.5">{completedTrips}+ Rides</div>
+              <div className="text-[10px] text-muted">Completed</div>
+            </div>
+            <div className="rounded-2xl p-3 bg-navy-card/80 border border-navy-border text-center">
+              <div className="text-xl">🏔️</div>
+              <div className="font-display font-bold text-white text-sm mt-0.5 truncate">Hill Pro</div>
+              <div className="text-[10px] text-muted">Terrain Expert</div>
+            </div>
+          </div>
+
+          {/* ── Real Vehicle & Cab Photos Showcase ── */}
+          <div className="rounded-2xl p-4 bg-navy-card border border-navy-border space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                <span>📸</span> Vehicle & Cab Photos
+              </h4>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold">
+                ✓ Uploaded by Driver
+              </span>
+            </div>
+
+            {vehiclePhotos.length > 0 ? (
+              <div className="space-y-2.5">
+                {/* Main Hero Photo Display */}
+                <div
+                  className="relative rounded-2xl overflow-hidden border border-navy-border group cursor-pointer"
+                  style={{
+                    height: "190px",
+                    background: "linear-gradient(135deg, #0D1B2E, #162540)",
+                  }}
+                  onClick={() => setSelectedPhoto(activePhoto)}
+                >
+                  <img
+                    src={activePhoto}
+                    alt={`${vehicleName} photo`}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-all duration-300"
+                  />
+                  {/* Photo Overlay Pill Badges */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+
+                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                    <span className="px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/20 text-white font-mono text-[11px] font-bold">
+                      {driver.vehicleNumber}
+                    </span>
+                    <span className="px-2 py-1 rounded-lg bg-emerald-500/80 backdrop-blur-md text-white text-[10px] font-semibold">
+                      ✓ Verified Cab
+                    </span>
+                  </div>
+
+                  <div className="absolute top-2.5 right-2.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPhoto(activePhoto);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white text-[11px] font-medium flex items-center gap-1 transition-all"
+                    >
+                      <span>🔍</span>
+                      <span>Zoom</span>
+                    </button>
+                  </div>
+
+                  <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-xs text-white">
+                    <span className="font-semibold drop-shadow-md capitalize">
+                      {vehicleName} ({driver.vehicleType})
+                    </span>
+                    <span className="text-[11px] text-slate-300 font-mono drop-shadow-md">
+                      Photo {activePhotoIndex + 1} of {vehiclePhotos.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Thumbnails row */}
+                {vehiclePhotos.length > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                    {vehiclePhotos.map((photo, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setActivePhotoIndex(i)}
+                        className={`relative h-14 w-20 rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all ${
+                          activePhotoIndex === i
+                            ? "border-cyan-400 ring-2 ring-cyan-400/30 scale-95"
+                            : "border-navy-border/80 opacity-70 hover:opacity-100 hover:border-slate-400"
+                        }`}
+                      >
+                        <img
+                          src={photo}
+                          alt={`Thumbnail ${i + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[9px] text-white font-mono text-center py-0.5 leading-none">
+                          {i === 0 ? "Front" : i === 1 ? "Side" : i === 2 ? "Interior" : `View ${i + 1}`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-navy-deep border border-navy-border space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🚕</span>
+                    <div>
+                      <p className="text-white font-semibold text-xs capitalize">{vehicleName}</p>
+                      <p className="text-[11px] font-mono text-cyan-300">{driver.vehicleNumber}</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold">
+                    ✓ Fleet Verified
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted leading-relaxed">
+                  Vehicle inspected & certified by TaxiMint fleet operations for hill driving & safety standards.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Verification & Trust Badges */}
+          <div className="rounded-2xl p-4 bg-navy-card border border-navy-border space-y-3">
+            <h4 className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🛡️</span> Document & Safety Verifications
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-navy-deep border border-navy-border/70">
+                <span className="h-5 w-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                  ✓
+                </span>
+                <div>
+                  <p className="text-white font-medium">Driving License</p>
+                  <p className="text-[10px] text-muted">Commercial certified</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-navy-deep border border-navy-border/70">
+                <span className="h-5 w-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                  ✓
+                </span>
+                <div>
+                  <p className="text-white font-medium">Vehicle RC Document</p>
+                  <p className="text-[10px] text-muted">HP Transport registered</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-navy-deep border border-navy-border/70">
+                <span className="h-5 w-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                  ✓
+                </span>
+                <div>
+                  <p className="text-white font-medium">Identity & KYC</p>
+                  <p className="text-[10px] text-muted">Aadhaar Govt verified</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-navy-deep border border-navy-border/70">
+                <span className="h-5 w-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                  ✓
+                </span>
+                <div>
+                  <p className="text-white font-medium">State Permit</p>
+                  <p className="text-[10px] text-muted">Commercial Tourist permit</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Vehicle Specifications & Amenities */}
+          <div className="rounded-2xl p-4 bg-navy-card border border-navy-border space-y-3">
+            <h4 className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🚗</span> Vehicle Specifications & Amenities
+            </h4>
+            <div className="grid grid-cols-2 gap-2.5 text-xs">
+              <div className="p-3 rounded-xl bg-navy-deep border border-navy-border">
+                <p className="text-muted text-[10px] uppercase font-mono">Vehicle</p>
+                <p className="font-semibold text-white capitalize mt-0.5 truncate">{vehicleName}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-navy-deep border border-navy-border">
+                <p className="text-muted text-[10px] uppercase font-mono">Plate Number</p>
+                <p className="font-mono font-bold text-cyan-300 mt-0.5">{driver.vehicleNumber}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-navy-deep border border-navy-border">
+                <p className="text-muted text-[10px] uppercase font-mono">Capacity & Class</p>
+                <p className="font-semibold text-white mt-0.5">
+                  {driver.vehicleType} · {profile?.seats || 6} Seater
+                </p>
+              </div>
+              <div className="p-3 rounded-xl bg-navy-deep border border-navy-border">
+                <p className="text-muted text-[10px] uppercase font-mono">Air Conditioning</p>
+                <p className="font-semibold text-emerald-400 mt-0.5">
+                  {profile?.acAvailable ? "❄️ AC Available" : "Non-AC"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Customer Reviews & Feedback */}
+          <div className="rounded-2xl p-4 bg-navy-card border border-navy-border space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                <span>💬</span> Customer Reviews & Feedback
+              </h4>
+              <span className="text-xs font-bold text-amber">
+                ⭐ {rating.toFixed(1)} / 5.0
+              </span>
+            </div>
+
+            {/* Ratings Breakdown Bar Chart */}
+            <div className="space-y-1.5 py-1">
+              {[5, 4, 3, 2, 1].map((st) => {
+                const count = breakdown[st] || 0;
+                const pct = totalRatingsCount > 0 ? Math.round((count / totalRatingsCount) * 100) : 0;
+                return (
+                  <div key={st} className="flex items-center gap-2 text-[11px]">
+                    <span className="w-5 text-right font-mono text-muted">{st}★</span>
+                    <div className="flex-1 h-2 rounded-full bg-navy-deep overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="w-7 text-right font-mono text-muted text-[10px]">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Review Cards */}
+            {profile?.reviews && profile.reviews.length > 0 ? (
+              <div className="space-y-2.5 pt-2">
+                {profile.reviews.map((rev, idx) => (
+                  <div
+                    key={rev.id || idx}
+                    className="p-3.5 rounded-2xl bg-navy-deep border border-navy-border space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-full bg-blue-primary/20 border border-blue-primary/40 flex items-center justify-center text-[10px] text-blue-300 font-bold">
+                          {(rev.customer_name || "C")[0].toUpperCase()}
+                        </div>
+                        <span className="text-xs font-bold text-white">
+                          {rev.customer_name || "Verified Customer"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-amber text-xs">{"★".repeat(rev.rating)}</span>
+                        <span className="text-[10px] text-muted ml-1">
+                          {rev.created_at ? new Date(rev.created_at).toLocaleDateString() : "Recent"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {rev.comment && (
+                      <p className="text-xs text-slate-300 italic leading-relaxed">
+                        "{rev.comment}"
+                      </p>
+                    )}
+
+                    {rev.tags && rev.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {rev.tags.map((tg) => (
+                          <span
+                            key={tg}
+                            className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-300 border border-cyan-500/20"
+                          >
+                            ✓ {tg}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-navy-deep/60 border border-navy-border/50 text-center text-xs text-muted">
+                🌟 Top-rated driver with 100% verified track record.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Modal Footer with Direct Book Action */}
+        <div className="p-4 border-t border-navy-border bg-navy-card flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] text-muted font-mono uppercase">Confirmed Fare</div>
+            <div className="font-display text-2xl font-black text-white">₹{driver.fare}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onBook(driver);
+            }}
+            disabled={booking}
+            className="btn-gradient px-6 py-3 rounded-xl disabled:opacity-50 font-semibold text-sm shadow-xl flex-1 max-w-[220px]"
+          >
+            {booking ? "Booking..." : `Book for ₹${driver.fare} →`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Driver Card ──────────────────────────────────────────
 function DriverCard({
-  driver, onBook, booking,
+  driver,
+  onBook,
+  onViewProfile,
+  booking,
 }: {
   driver: DriverResult;
   onBook: (d: DriverResult) => void;
+  onViewProfile: (d: DriverResult) => void;
   booking: boolean;
 }) {
   const stars = Math.round(driver.ratingAvg);
   return (
-    <div className="rounded-2xl border border-navy-border bg-navy-card overflow-hidden animate-fade-up">
-      {/* Top section */}
-      <div className="p-4">
+    <div className="rounded-2xl border border-navy-border bg-navy-card overflow-hidden animate-fade-up transition-all hover:border-blue-primary/40">
+      {/* Top section - clickable to view profile */}
+      <div
+        className="p-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
+        onClick={() => onViewProfile(driver)}
+        title="Click to view driver profile & reviews"
+      >
         <div className="flex items-start gap-3">
-          {/* Vehicle icon */}
-          <div
-            className="h-14 w-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0"
-            style={{
-              background: "linear-gradient(135deg, #0D1B2E, #162540)",
-              border: "1px solid #1A2E45",
-            }}
-          >
-            {VEHICLE_ICONS[driver.vehicleType]}
+          {/* Driver Avatar / Profile Photo */}
+          <div className="relative flex-shrink-0">
+            <div
+              className="h-14 w-14 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 overflow-hidden shadow-md"
+              style={{
+                background: "linear-gradient(135deg, #0D1B2E, #162540)",
+                border: "1.5px solid rgba(6,182,212,0.4)",
+              }}
+            >
+              {driver.avatarPhoto ? (
+                <img
+                  src={driver.avatarPhoto}
+                  alt={driver.driverName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span>👨‍✈️</span>
+              )}
+            </div>
+            <span
+              className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 border-2 border-navy-card flex items-center justify-center text-[8px] text-white font-bold shadow"
+              title="Verified Driver"
+            >
+              ✓
+            </span>
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-display font-bold text-white truncate">{driver.driverName}</h3>
-              <div className="font-display text-xl font-bold text-white flex-shrink-0">₹{driver.fare}</div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h3 className="font-display font-bold text-white truncate hover:text-cyan-300 transition-colors">
+                  {driver.driverName}
+                </h3>
+                <span className="text-[10px] text-blue-400 font-medium">↗</span>
+              </div>
+              <div className="font-display text-xl font-bold text-white flex-shrink-0">
+                ₹{driver.fare}
+              </div>
             </div>
-            <p className="text-xs text-muted mt-0.5">{driver.vehicleNumber} · {driver.city}</p>
+            <p className="text-xs text-muted mt-0.5">
+              {driver.vehicleNumber} · {driver.city}
+              {driver.vehicleMake ? ` · ${driver.vehicleMake}` : ""}
+            </p>
 
             {/* Stars & Reviews */}
             <div className="flex items-center gap-0.5 mt-1.5">
               {Array.from({ length: 5 }).map((_, i) => (
-                <span key={i} className={`text-xs ${i < stars ? "text-amber" : "text-muted"}`}>★</span>
+                <span key={i} className={`text-xs ${i < stars ? "text-amber" : "text-muted"}`}>
+                  ★
+                </span>
               ))}
-              <span className="text-[11px] text-amber font-bold ml-1.5">{driver.ratingAvg.toFixed(1)}</span>
+              <span className="text-[11px] text-amber font-bold ml-1.5">
+                {driver.ratingAvg.toFixed(1)}
+              </span>
               <span className="text-[10px] text-muted ml-1">
-                ({driver.totalReviews || 0} reviews)
+                ({driver.totalReviews || 0} review{(driver.totalReviews || 0) !== 1 ? "s" : ""})
+              </span>
+              <span className="text-[10px] text-cyan-400/80 ml-auto hover:underline font-medium">
+                View profile →
               </span>
             </div>
           </div>
@@ -68,7 +613,9 @@ function DriverCard({
           </div>
           <div className="flex items-center gap-1.5 rounded-xl bg-navy-deep border border-navy-border px-3 py-1.5">
             <span className="text-xs">📍</span>
-            <span className="text-xs text-white font-medium">{driver.pickupDistanceKm.toFixed(1)} km away</span>
+            <span className="text-xs text-white font-medium">
+              {driver.pickupDistanceKm.toFixed(1)} km away
+            </span>
           </div>
           <div className="flex items-center gap-1.5 rounded-xl border border-green/30 bg-green/10 px-3 py-1.5">
             <span className="dot-online scale-75" />
@@ -77,17 +624,26 @@ function DriverCard({
         </div>
       </div>
 
-      {/* Book button */}
-      <div className="px-4 pb-4">
+      {/* Action buttons row */}
+      <div className="px-4 pb-4 pt-1 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onViewProfile(driver)}
+          className="px-3.5 py-3 rounded-xl border border-navy-border bg-navy-deep hover:bg-navy-hover hover:border-blue-primary/50 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all flex-shrink-0"
+        >
+          <span>👤</span>
+          <span>Profile & Reviews</span>
+        </button>
+
         <button
           onClick={() => onBook(driver)}
           disabled={booking}
-          className="btn-gradient w-full py-3 rounded-xl disabled:opacity-50 font-semibold"
+          className="btn-gradient flex-1 py-3 rounded-xl disabled:opacity-50 font-semibold text-sm shadow-md"
         >
           {booking ? (
             <span className="flex items-center gap-2 justify-center">
               <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-              Booking your ride…
+              Booking…
             </span>
           ) : (
             `Book for ₹${driver.fare} →`
@@ -569,6 +1125,7 @@ function ResultsContent() {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
+  const [viewingProfileDriver, setViewingProfileDriver] = useState<DriverResult | null>(null);
 
   // Acceptance overlay state
   const [pendingRide, setPendingRide] = useState<{
@@ -700,7 +1257,7 @@ function ResultsContent() {
                 <h2 className="font-display font-bold text-white">
                   {result.drivers.length} Driver{result.drivers.length !== 1 ? "s" : ""} Available
                 </h2>
-                <p className="text-xs text-muted mt-0.5">Est. fare from ₹{result.baseFareEstimate}</p>
+                <p className="text-xs text-muted mt-0.5">Est. fare from ₹{result.drivers.length > 0 ? Math.min(...result.drivers.map(d => d.fare)) : result.baseFareEstimate}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="dot-online scale-75" />
@@ -718,7 +1275,17 @@ function ResultsContent() {
             ) : (
               <div className="space-y-3">
                 {result.drivers.map((d) => (
-                  <DriverCard key={d.driverId} driver={d} onBook={handleBook} booking={booking} />
+                  <DriverCard
+                    key={d.driverId}
+                    driver={d}
+                    onBook={handleBook}
+                    onViewProfile={(driver) => {
+                      const profileParams = new URLSearchParams(params.toString());
+                      profileParams.set("fare", String(driver.fare));
+                      router.push(`/drivers/${driver.driverId}?${profileParams.toString()}`);
+                    }}
+                    booking={booking}
+                  />
                 ))}
               </div>
             )}

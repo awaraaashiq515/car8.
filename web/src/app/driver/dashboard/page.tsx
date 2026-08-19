@@ -606,6 +606,12 @@ export default function DriverDashboard() {
           setProfile(p);
           setIsOnline(p.is_online === 1);
 
+          // Always check for an in-progress ride on load (even if driver is offline)
+          // so a driver with an active booking always sees their trip panel
+          driverApi.getActiveRide()
+            .then((r) => { if (r) setActiveRide(r); })
+            .catch(() => {});
+
           // Stream Driver Live Moving GPS Location
           if (typeof window !== "undefined" && "geolocation" in navigator) {
             const handlePos = (pos: GeolocationPosition) => {
@@ -674,11 +680,13 @@ export default function DriverDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!isOnline || !profile) return;
+    // Poll when online, OR when there is an active ride that must be tracked to completion
+    const shouldPoll = profile && (isOnline || activeRide);
+    if (!shouldPoll) return;
     poll();
     pollingRef.current = setInterval(poll, 4000);
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, [isOnline, profile, poll]);
+  }, [isOnline, profile, activeRide, poll]);
 
   // Enable audio context on first user interaction
   useEffect(() => {
@@ -778,8 +786,8 @@ export default function DriverDashboard() {
       </div>
 
       <div className="relative z-10 mx-auto max-w-lg px-4 py-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        {/* Header with Top Duty Toggle */}
+        <div className="flex items-center justify-between mb-4">
           <Link href="/login" className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg flex items-center justify-center text-sm"
               style={{ background: "linear-gradient(135deg, #2563EB, #06B6D4)" }}>🚕</div>
@@ -788,84 +796,116 @@ export default function DriverDashboard() {
               <span className="ml-1.5 text-xs font-mono text-muted normal-case">Driver</span>
             </span>
           </Link>
+
           <div className="flex items-center gap-2">
+            {/* Real Interactive Online / Offline Toggle Switch Button */}
+            <button
+              onClick={handleToggle}
+              disabled={toggling}
+              className={`group flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full font-mono text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer border ${
+                isOnline
+                  ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.3)] hover:border-emerald-400 hover:bg-emerald-950"
+                  : "bg-[#0D1B2E] border-slate-700 text-slate-400 hover:text-white hover:border-slate-500"
+              }`}
+              title={isOnline ? "Click to go Offline" : "Click to go Online"}
+            >
+              <span>{isOnline ? "ONLINE" : "OFFLINE"}</span>
+              {/* Sliding Switch Pill */}
+              <div
+                className={`relative w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${
+                  isOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" : "bg-slate-700"
+                }`}
+              >
+                <div
+                  className={`w-3 h-3 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
+                    isOnline ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </div>
+            </button>
+
             <button
               onClick={() => setShowSos(true)}
-              className="px-3 py-1.5 rounded-xl bg-red/20 border border-red/40 text-red text-xs font-bold animate-pulse hover:bg-red/30"
+              className="px-2.5 py-1.5 rounded-xl bg-red/20 border border-red/40 text-red text-xs font-bold animate-pulse hover:bg-red/30"
+              title="Emergency SOS"
             >
               🚨 SOS
             </button>
+
             <button
               onClick={handleLogout}
-              className="btn-ghost text-xs border-red/30 text-red hover:bg-red/10"
+              className="btn-ghost text-xs border-red/30 text-red hover:bg-red/10 px-2.5 py-1.5"
             >
               Logout
             </button>
           </div>
         </div>
 
-        {/* Profile Card */}
-        <div className="card mb-5">
-          <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #0D1B2E, #162540)" }}>
-              👨‍✈️
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-display font-bold text-white text-lg">{profile.name || "Driver"}</div>
-              <div className="text-sm text-muted">{profile.phone}</div>
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                <span className="badge badge-muted">🚗 {profile.vehicle_type}</span>
-                <span className="badge badge-muted">{profile.vehicle_number}</span>
-                <span className="badge badge-muted">📍 {profile.city}</span>
-                {profile.is_verified ? (
-                  <span className="badge badge-green">✅ Verified</span>
+        {/* Compact & Sleek Driver Profile Card */}
+        <div className="card p-3.5 mb-4 border-navy-border/80 bg-gradient-to-r from-[#0D182E] via-navy-card to-[#0D182E] shadow-lg">
+          <div className="flex items-center gap-3">
+            {/* Driver Avatar Picture */}
+            <div className="relative flex-shrink-0">
+              <div
+                className="h-12 w-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden shadow-md"
+                style={{
+                  background: "linear-gradient(135deg, #0D1B2E, #162540)",
+                  border: "1.5px solid rgba(6,182,212,0.4)",
+                }}
+              >
+                {profile.avatar_photo ? (
+                  <img
+                    src={profile.avatar_photo}
+                    alt={profile.name || "Driver"}
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
-                  <span className="badge badge-amber">⏳ Pending Verification</span>
+                  <span>👨‍✈️</span>
                 )}
               </div>
-            </div>
-            <div className="text-right flex-shrink-0">
-              <div className="text-xs text-muted mb-0.5">Rating</div>
-              <div className="font-display font-bold text-white">⭐ {profile.rating_avg.toFixed(1)}</div>
-            </div>
-          </div>
-        </div>
-
-
-
-
-        {/* Online Toggle */}
-        <div className="card mb-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                {isOnline ? <span className="dot-online" /> : <span className="dot-offline" />}
-                <span className="font-display font-bold text-white text-lg">
-                  {isOnline ? "Online" : "Offline"}
+              {profile.is_verified ? (
+                <span
+                  className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 border-2 border-navy-card flex items-center justify-center text-[8px] text-white font-bold shadow"
+                  title="Verified Driver"
+                >
+                  ✓
                 </span>
-              </div>
-              <p className="text-xs text-muted mt-1">
-                {isOnline
-                  ? "You are online — accepting ride requests"
-                  : "Go online to start receiving ride requests"}
-              </p>
+              ) : null}
             </div>
-            <button
-              onClick={handleToggle}
-              disabled={toggling}
-              className={`relative h-8 w-14 rounded-full transition-all duration-300 flex-shrink-0 ${
-                isOnline
-                  ? "bg-green shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                  : "bg-navy-border"
-              } disabled:opacity-50`}
-            >
-              <span
-                className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all duration-300 ${
-                  isOnline ? "left-7" : "left-1"
-                }`}
-              />
-            </button>
+
+            {/* Middle Details */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="font-display font-bold text-white text-base truncate capitalize leading-tight">
+                  {profile.name || "Driver"}
+                </h3>
+                {profile.is_verified ? (
+                  <span className="text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded-md leading-none">
+                    Verified
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-amber-400 font-mono font-semibold bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-md leading-none">
+                    Pending
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted font-mono mt-1 truncate">
+                <span className="text-white font-semibold">🚗 {profile.vehicle_type}</span>
+                <span className="text-navy-border">•</span>
+                <span className="text-cyan-300 font-bold">{profile.vehicle_number}</span>
+                <span className="text-navy-border">•</span>
+                <span>📍 {profile.city}</span>
+              </div>
+            </div>
+
+            {/* Right Rating */}
+            <div className="text-right flex-shrink-0 pl-3 border-l border-navy-border/60">
+              <div className="text-[9px] text-muted uppercase font-mono leading-none">Rating</div>
+              <div className="font-display font-bold text-white text-sm mt-1 flex items-center gap-1 justify-end">
+                <span className="text-amber text-xs">★</span>
+                <span>{profile.rating_avg.toFixed(1)}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -924,7 +964,14 @@ export default function DriverDashboard() {
           <TripSettlementModal
             ride={activeRide}
             driver={profile}
-            onComplete={() => setActiveRide(null)}
+            onComplete={async () => {
+              setActiveRide(null);
+              // Refresh history so new completed ride appears in stats
+              try {
+                const history = await driverApi.getDriverRides();
+                if (history) setRides(history);
+              } catch { /* ignore */ }
+            }}
           />
         )}
 

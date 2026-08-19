@@ -12,19 +12,27 @@ import { settingsRouter }   from "./routes/settings.routes";
 import "./lib/db"; // ensures schema is created on boot
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  })
+);
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "cab8-backend" }));
 app.use("/auth",        authRouter);
+app.use("/api/auth",    authRouter);
 app.use("/rides",       ridesRouter);
+app.use("/api/rides",   ridesRouter);
 app.use("/driver/auth", driverAuthRouter);
 app.use("/driver",      driverRouter);
 app.use("/board",       boardRouter);
 app.use("/union",       unionRouter);
 app.use("/api/union",   unionRouter);
-app.use("/admin",       adminRouter); // super-admin portal — no public links
+app.use("/admin",       adminRouter);
 app.use("/settings",    settingsRouter);
 
 app.use((req, res) => res.status(404).json({ error: `No route for ${req.method} ${req.path}` }));

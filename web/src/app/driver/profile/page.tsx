@@ -352,18 +352,30 @@ export default function DriverProfilePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Quick Online / Offline Switch */}
+            {/* Real Interactive Online / Offline Toggle Switch Button */}
             {profile && (
               <button
                 onClick={toggleDuty}
-                className={`px-3 py-1 rounded-full text-[11px] font-mono font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                className={`group flex items-center gap-2 pl-3 pr-1.5 py-1 rounded-full font-mono text-[11px] font-bold transition-all shadow-md active:scale-95 cursor-pointer border ${
                   profile.is_online
-                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                    : "bg-slate-800 text-slate-400 border border-slate-700"
+                    ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.3)] hover:border-emerald-400"
+                    : "bg-[#0D1B2E] border-slate-700 text-slate-400 hover:text-white hover:border-slate-500"
                 }`}
+                title={profile.is_online ? "Click to go Offline" : "Click to go Online"}
               >
-                <span className={`h-2 w-2 rounded-full ${profile.is_online ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
-                {profile.is_online ? "ON DUTY" : "OFFLINE"}
+                <span>{profile.is_online ? "ONLINE" : "OFFLINE"}</span>
+                {/* Sliding Switch Pill */}
+                <div
+                  className={`relative w-7 h-3.5 rounded-full transition-colors flex items-center px-0.5 ${
+                    profile.is_online ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" : "bg-slate-700"
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
+                      profile.is_online ? "translate-x-3.5" : "translate-x-0"
+                    }`}
+                  />
+                </div>
               </button>
             )}
 
@@ -530,6 +542,25 @@ export default function DriverProfilePage() {
             className="text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 px-3.5 py-2 rounded-xl shadow transition-all whitespace-nowrap active:scale-95"
           >
             + Post Ride
+          </Link>
+        </div>
+
+        {/* ── Taxi Union Membership Banner ── */}
+        <div className="rounded-3xl border border-amber-500/35 bg-gradient-to-r from-amber-950/40 via-[#0D1B2E] to-orange-950/30 p-4 shadow-lg flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-lg shadow">
+              🔰
+            </div>
+            <div>
+              <h4 className="font-bold text-white text-xs sm:text-sm">Taxi Union Membership</h4>
+              <p className="text-[11px] text-amber-300 font-mono">Apply for official union approval</p>
+            </div>
+          </div>
+          <Link
+            href="/driver/union"
+            className="text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-500 to-orange-400 hover:brightness-110 px-3.5 py-2 rounded-xl shadow transition-all whitespace-nowrap active:scale-95"
+          >
+            Union Form →
           </Link>
         </div>
 

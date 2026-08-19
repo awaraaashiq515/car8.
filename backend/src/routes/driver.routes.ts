@@ -80,6 +80,83 @@ driverRouter.get("/:id/public-reviews", (req, res) => {
 });
 
 /**
+ * GET /driver/:id/public-profile
+ * Public endpoint for customer to view complete driver profile, ratings, vehicle details, verifications and reviews.
+ */
+driverRouter.get("/:id/public-profile", (req, res) => {
+  const profile = db.prepare(`
+    SELECT dp.*, u.name as driver_name, u.phone as driver_phone, u.created_at as member_since
+    FROM driver_profiles dp
+    JOIN users u ON u.id = dp.user_id
+    WHERE dp.id = ?
+  `).get(req.params.id) as any;
+
+  if (!profile) return res.status(404).json({ error: "Driver profile not found" });
+
+  const completedRides = db.prepare(
+    "SELECT COUNT(*) as count FROM rides WHERE driver_id = ? AND status = 'COMPLETED'"
+  ).get(profile.id) as { count: number };
+
+  const rawReviews = db
+    .prepare("SELECT id, customer_name, rating, comment, tags_json, created_at FROM driver_reviews WHERE driver_id = ? ORDER BY created_at DESC LIMIT 30")
+    .all(profile.id) as any[];
+
+  const reviews = rawReviews.map(r => ({
+    id: r.id,
+    customer_name: r.customer_name || "Customer",
+    rating: r.rating,
+    comment: r.comment,
+    tags: JSON.parse(r.tags_json || "[]"),
+    created_at: r.created_at,
+  }));
+
+  const breakdown: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  const allRatings = db.prepare("SELECT rating FROM driver_reviews WHERE driver_id = ?").all(profile.id) as any[];
+  allRatings.forEach(r => {
+    if (r.rating >= 1 && r.rating <= 5) breakdown[r.rating]++;
+  });
+
+  let vehiclePhotos = [];
+  try {
+    vehiclePhotos = JSON.parse(profile.vehicle_photos || "[]");
+  } catch {
+    vehiclePhotos = [];
+  }
+
+  return res.json({
+    id: profile.id,
+    driverName: profile.driver_name || "Driver",
+    city: profile.city,
+    district: profile.district,
+    tehsil: profile.tehsil,
+    village: profile.village,
+    standName: profile.stand_name,
+    vehicleType: profile.vehicle_type,
+    vehicleNumber: profile.vehicle_number,
+    vehicleMake: profile.vehicle_make,
+    vehicleModel: profile.vehicle_model,
+    vehicleYear: profile.vehicle_year,
+    seats: profile.seats || 4,
+    fuelType: profile.fuel_type || "Petrol",
+    acAvailable: profile.ac_available === 1,
+    avatarPhoto: profile.avatar_photo,
+    vehiclePhotos,
+    experience: profile.experience || "Experienced Hill Driver",
+    permitZones: profile.permit_zones || "Himachal Pradesh & North India",
+    isVerified: profile.is_verified === 1,
+    rcVerified: Boolean(profile.rc_photo || profile.vehicle_number),
+    licenseVerified: Boolean(profile.license_photo || profile.license_number),
+    aadharVerified: Boolean(profile.aadhar_photo),
+    ratingAvg: profile.rating_avg || 5.0,
+    totalReviews: profile.total_reviews || allRatings.length,
+    completedTrips: completedRides?.count || 0,
+    memberSince: profile.member_since,
+    breakdown,
+    reviews,
+  });
+});
+
+/**
  * PATCH /driver/profile
  * Updates the logged-in driver's personal, vehicle, location, documents, and payout details.
  */

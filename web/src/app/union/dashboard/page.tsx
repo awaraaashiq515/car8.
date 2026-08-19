@@ -378,7 +378,7 @@ export default function UnionDashboard() {
             { href: "/union/apply",    icon: "🔰", label: "Apply Link", accent: "#06B6D4", badge: null },
             { href: "/union/analytics",icon: "📊", label: "Analytics",  accent: "#2563EB", badge: null },
             { href: "/union/profile",  icon: "⚙️", label: "Settings",   accent: "#A855F7", badge: null },
-            { href: "/driver",         icon: "🚗", label: "Drivers",    accent: "#F59E0B", badge: null },
+            { href: "/union/register", icon: "📝", label: "New Union",  accent: "#F59E0B", badge: null },
           ].map((a, i) => (
             <Link key={a.href} href={a.href} style={{
               display: "flex", flexDirection: "column", alignItems: "center", gap: 6,

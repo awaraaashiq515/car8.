@@ -14,12 +14,12 @@ const VEHICLE_RANGES: Record<VehicleType, { min: number; max: number; suggested:
   LUXURY:    { min: 28, max: 100, suggested: 40, label: "Luxury",    icon: "🏎️" },
 };
 
-// Ride type multipliers (informational)
+// Ride type surcharges — must match backend fare.ts exactly
 const RIDE_MULTIPLIERS = [
-  { type: "LOCAL",      label: "Local City",    mult: 1.0,  color: "#06B6D4", icon: "🏙️" },
-  { type: "OUTSTATION", label: "Outstation",    mult: 1.2,  color: "#10B981", icon: "🛣️" },
-  { type: "AIRPORT",    label: "Airport",       mult: 1.15, color: "#F59E0B", icon: "✈️" },
-  { type: "HOURLY",     label: "Hourly",        mult: 1.1,  color: "#A855F7", icon: "⏱️" },
+  { type: "LOCAL",      label: "Local City",    surcharge: 0,   color: "#06B6D4", icon: "🏙️" },
+  { type: "OUTSTATION", label: "Outstation",    surcharge: 0,   color: "#10B981", icon: "🛣️" },
+  { type: "AIRPORT",    label: "Airport",       surcharge: 100, color: "#F59E0B", icon: "✈️" },
+  { type: "HOURLY",     label: "Hourly",        surcharge: 0,   color: "#A855F7", icon: "⏱️" },
 ];
 
 // Distance preview points
@@ -279,12 +279,16 @@ export default function DriverRatesPage() {
 
             {/* ── Live Earnings Preview ──────────────────────────────── */}
             <div className="card space-y-3">
-              <h2 className="font-mono text-[11px] uppercase tracking-wider text-muted">
-                💰 Earnings Preview (Local)
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="font-mono text-[11px] uppercase tracking-wider text-muted">
+                  💰 Earnings Preview
+                </h2>
+                <span className="text-[10px] text-muted font-mono">₹50 base + ₹{rate}/km</span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {PREVIEW_KMS.map((km) => {
-                  const earn = Math.round(rate * km);
+                  // Match backend formula exactly: BASE_FARE(50) + km * rate
+                  const earn = Math.round(50 + rate * km);
                   return (
                     <div
                       key={km}
@@ -293,7 +297,7 @@ export default function DriverRatesPage() {
                       <div>
                         <p className="text-xs text-muted">{km} km trip</p>
                         <p className="text-[11px] text-muted/60 font-mono">
-                          ₹{rate}/km × {km}
+                          ₹50 + ₹{rate}×{km}
                         </p>
                       </div>
                       <span className="font-display font-bold text-green text-lg">
@@ -305,17 +309,18 @@ export default function DriverRatesPage() {
               </div>
             </div>
 
-            {/* ── Ride Type Multipliers (Info) ───────────────────────── */}
+            {/* ── Ride Type Surcharges (Info) ──────────────────────── */}
             <div className="card space-y-3">
               <h2 className="font-mono text-[11px] uppercase tracking-wider text-muted">
-                🗂️ Effective Rates by Ride Type
+                🗂️ Fare by Ride Type (for 20 km trip)
               </h2>
               <p className="text-[11px] text-muted leading-relaxed">
-                System automatically applies multipliers to your base rate for different ride types.
+                Your base rate applies equally for all ride types. Airport rides include a ₹100 fixed surcharge.
               </p>
               <div className="space-y-2">
                 {RIDE_MULTIPLIERS.map((rm) => {
-                  const effective = Math.round(rate * rm.mult * 10) / 10;
+                  // Backend formula: ₹50 base + km * rate + surcharge
+                  const exampleFare = Math.round(50 + 20 * rate + rm.surcharge);
                   return (
                     <div
                       key={rm.type}
@@ -325,18 +330,14 @@ export default function DriverRatesPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-white">{rm.label}</p>
                         <p className="text-[11px] text-muted font-mono">
-                          {rm.mult === 1.0 ? "No multiplier" : `${rm.mult}× multiplier`}
+                          {rm.surcharge === 0 ? "No extra surcharge" : `+₹${rm.surcharge} fixed surcharge`}
                         </p>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="font-bold font-mono" style={{ color: rm.color }}>
-                          ₹{effective}/km
+                        <p className="font-bold font-mono text-sm" style={{ color: rm.color }}>
+                          ₹{exampleFare}
                         </p>
-                        {rm.mult !== 1.0 && (
-                          <p className="text-[10px] text-muted">
-                            +{Math.round((rm.mult - 1) * 100)}%
-                          </p>
-                        )}
+                        <p className="text-[10px] text-muted">20km fare</p>
                       </div>
                     </div>
                   );
