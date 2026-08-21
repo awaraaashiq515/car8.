@@ -12,7 +12,21 @@ export function getApiUrl(): string {
 
 export type DriverOnlineStatus = "ONLINE" | "OFFLINE";
 
-export type VehicleType = "HATCHBACK" | "SEDAN" | "SUV" | "LUXURY";
+/** Top-level category a vehicle belongs to */
+export type VehicleCategory = "CAR" | "BIKE" | "AUTO" | "GOODS" | "HEAVY";
+
+export type VehicleType =
+  // ── CAR ──────────────────────────────────────────
+  | "HATCHBACK" | "SEDAN" | "SUV" | "LUXURY"
+  // ── BIKE ─────────────────────────────────────────
+  | "BIKE" | "ELECTRIC_BIKE"
+  // ── AUTO / RICKSHAW ───────────────────────────────
+  | "AUTO" | "E_RICKSHAW"
+  // ── GOODS VEHICLES ────────────────────────────────
+  | "PICKUP_TRUCK" | "MINI_TRUCK" | "TEMPO" | "TRUCK"
+  // ── HEAVY MACHINERY ───────────────────────────────
+  | "JCB" | "TRACTOR" | "CRANE" | "TIPPER";
+
 export type RideType = "LOCAL" | "OUTSTATION" | "AIRPORT" | "HOURLY";
 export type RideStatus =
   | "SEARCHING"
@@ -23,10 +37,135 @@ export type RideStatus =
   | "COMPLETED"
   | "CANCELLED";
 
+/** Maps each vehicle type to its parent category */
+export const VEHICLE_CATEGORY_MAP: Record<VehicleType, VehicleCategory> = {
+  HATCHBACK: "CAR", SEDAN: "CAR", SUV: "CAR", LUXURY: "CAR",
+  BIKE: "BIKE", ELECTRIC_BIKE: "BIKE",
+  AUTO: "AUTO", E_RICKSHAW: "AUTO",
+  PICKUP_TRUCK: "GOODS", MINI_TRUCK: "GOODS", TEMPO: "GOODS", TRUCK: "GOODS",
+  JCB: "HEAVY", TRACTOR: "HEAVY", CRANE: "HEAVY", TIPPER: "HEAVY",
+};
+
+/** Display metadata for each category */
+export const CATEGORY_META: Record<VehicleCategory, { label: string; icon: string; color: string; glow: string }> = {
+  CAR:   { label: "Car",           icon: "🚗", color: "#2563EB", glow: "rgba(37,99,235,0.3)"   },
+  BIKE:  { label: "Bike",          icon: "🏍️", color: "#7C3AED", glow: "rgba(124,58,237,0.3)"  },
+  AUTO:  { label: "Auto",          icon: "🛺", color: "#059669", glow: "rgba(5,150,105,0.3)"   },
+  GOODS: { label: "Goods Vehicle", icon: "🚛", color: "#EA580C", glow: "rgba(234,88,12,0.3)"   },
+  HEAVY: { label: "Heavy Machine", icon: "🚜", color: "#D97706", glow: "rgba(217,119,6,0.3)"   },
+};
+
+/** Display metadata for each specific vehicle type */
+export const VEHICLE_META: Record<VehicleType, { label: string; icon: string; seats: string; price: string; desc: string }> = {
+  // CAR
+  HATCHBACK:    { label: "Hatchback",    icon: "🚗", seats: "4 seats",  price: "₹12/km", desc: "Compact city car" },
+  SEDAN:        { label: "Sedan",        icon: "🚙", seats: "4 seats",  price: "₹16/km", desc: "Comfortable sedan" },
+  SUV:          { label: "SUV",          icon: "🚕", seats: "6 seats",  price: "₹22/km", desc: "Spacious family SUV" },
+  LUXURY:       { label: "Luxury",       icon: "🚘", seats: "Premium",  price: "₹35/km", desc: "Premium travel" },
+  // BIKE
+  BIKE:         { label: "Bike",         icon: "🏍️", seats: "1 seat",  price: "₹7/km",  desc: "Quick solo ride" },
+  ELECTRIC_BIKE:{ label: "E-Bike",       icon: "⚡", seats: "1 seat",  price: "₹6/km",  desc: "Eco-friendly" },
+  // AUTO
+  AUTO:         { label: "Auto",         icon: "🛺", seats: "3 seats",  price: "₹9/km",  desc: "City short trips" },
+  E_RICKSHAW:   { label: "E-Rickshaw",   icon: "🛺", seats: "3 seats",  price: "₹7/km",  desc: "Electric auto" },
+  // GOODS
+  PICKUP_TRUCK: { label: "Pickup Truck", icon: "🛻", seats: "Cargo",   price: "₹18/km", desc: "Light goods" },
+  MINI_TRUCK:   { label: "Mini Truck",   icon: "🚚", seats: "Cargo",   price: "₹22/km", desc: "Medium goods" },
+  TEMPO:        { label: "Tempo",        icon: "🚐", seats: "Cargo",   price: "₹20/km", desc: "Local transport" },
+  TRUCK:        { label: "Truck",        icon: "🚛", seats: "Cargo",   price: "₹30/km", desc: "Heavy goods" },
+  // HEAVY
+  JCB:          { label: "JCB",          icon: "🚜", seats: "Machine", price: "₹80/hr",  desc: "Excavation work" },
+  TRACTOR:      { label: "Tractor",      icon: "🚜", seats: "Machine", price: "₹50/hr",  desc: "Farming & rural" },
+  CRANE:        { label: "Crane",        icon: "🏗️", seats: "Machine", price: "₹100/hr", desc: "Construction" },
+  TIPPER:       { label: "Tipper",       icon: "🚧", seats: "Machine", price: "₹60/hr",  desc: "Sand & gravel" },
+};
+
+/** Default base fares per category (pickup / flag drop charge) */
+export const BASE_FARE_MAP: Record<VehicleCategory, number> = {
+  CAR: 50,
+  BIKE: 20,
+  AUTO: 30,
+  GOODS: 80,
+  HEAVY: 200,
+};
+
+/** Standard suggested per-km rate (or per-hr for heavy machinery) */
+export const DEFAULT_PER_KM_RATE: Record<VehicleType, number> = {
+  HATCHBACK: 12, SEDAN: 16, SUV: 22, LUXURY: 35,
+  BIKE: 7, ELECTRIC_BIKE: 6,
+  AUTO: 9, E_RICKSHAW: 7,
+  PICKUP_TRUCK: 18, MINI_TRUCK: 22, TEMPO: 20, TRUCK: 30,
+  JCB: 80, TRACTOR: 50, CRANE: 100, TIPPER: 60,
+};
+
 export interface Place {
   label: string;
   lat: number;
   lng: number;
+}
+
+export interface Union {
+  id: string;
+  name: string;
+  short_code: string;
+  district: string;
+  city: string;
+  admin_name?: string;
+  admin_phone?: string;
+  registered_at?: string;
+}
+
+export interface UnionBooking {
+  id: string;
+  customer_id: string;
+  driver_id?: string | null;
+  union_id?: string | null;
+  union_name?: string | null;
+  ride_type: RideType;
+  vehicle_type: VehicleType;
+  vehicle_category: VehicleCategory;
+  pickup_text: string;
+  drop_text: string;
+  distance_km: number;
+  estimated_fare: number;
+  status: RideStatus;
+  created_at: string;
+  scheduled_at?: string | null;
+  customer_name?: string;
+  customer_phone?: string;
+  driver_name?: string;
+  driver_phone?: string;
+  vehicle_number?: string;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  latest_message?: string | null;
+  latest_message_role?: string | null;
+  message_count?: number;
+}
+
+export interface GstInvoice {
+  id: string;
+  invoice_number: string;
+  ride_id: string;
+  union_id?: string;
+  union_name?: string;
+  union_gstin?: string | null;
+  union_address?: string | null;
+  customer_name?: string;
+  customer_phone?: string | null;
+  driver_name?: string | null;
+  vehicle_number?: string | null;
+  vehicle_type?: string | null;
+  pickup_text?: string;
+  drop_text?: string;
+  distance_km?: number;
+  ride_date?: string;
+  base_fare: number;
+  gst_rate: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  total_amount: number;
+  created_at: string;
 }
 
 export interface DriverResult {
@@ -43,6 +182,10 @@ export interface DriverResult {
   pickupDistanceKm: number;
   etaMinutes: number;
   fare: number;
+  ratePerKm?: number;
+  loadCapacity?: string;
+  unionId?: string | null;
+  unionName?: string | null;
 }
 
 export interface SearchResponse {
@@ -55,8 +198,11 @@ export interface Ride {
   id: string;
   customer_id: string;
   driver_id: string | null;
+  union_id?: string | null;
+  union_name?: string | null;
   ride_type: RideType;
   vehicle_type: VehicleType;
+  vehicle_category?: VehicleCategory;
   pickup_text: string;
   pickup_lat: number;
   pickup_lng: number;
@@ -115,12 +261,15 @@ export interface DriverPublicProfile {
   tehsil?: string | null;
   village?: string | null;
   standName?: string | null;
+  vehicleCategory: VehicleCategory;
   vehicleType: VehicleType;
   vehicleNumber: string;
   vehicleMake?: string | null;
   vehicleModel?: string | null;
   vehicleYear?: number | null;
   seats: number;
+  loadCapacity?: string | null;
+  hourlyRate?: number | null;
   fuelType?: string | null;
   acAvailable: boolean;
   avatarPhoto?: string | null;
@@ -271,6 +420,7 @@ export const api = {
     dropLng: number;
     vehicleType: VehicleType;
     rideType: RideType;
+    unionId?: string;
   }) =>
     request<SearchResponse>("/rides/search", {
       method: "POST",
@@ -285,7 +435,9 @@ export const api = {
     dropLng: number;
     vehicleType: VehicleType;
     rideType: RideType;
-    driverId: string;
+    driverId?: string;
+    unionId?: string;
+    unionName?: string;
   }) => request<Ride>("/rides", { method: "POST", body: JSON.stringify(payload) }),
   getRide: (id: string) => request<Ride>(`/rides/${id}`),
   getPublicTrack: (id: string) => request<Ride>(`/rides/${id}/public-track`),
@@ -328,6 +480,57 @@ export const api = {
     }),
   getPublicDriverProfile: (driverId: string) =>
     request<DriverPublicProfile>(`/driver/${driverId}/public-profile`),
+
+  // ── Union Management APIs ──
+  getUnionsList: () => request<{ unions: Union[] }>("/union/list"),
+  getUnionBookings: (unionId?: string, status?: string) =>
+    request<{ bookings: UnionBooking[] }>(
+      `/union/bookings?union_id=${encodeURIComponent(unionId || "")}&status=${encodeURIComponent(status || "")}`
+    ),
+  getUnionBookingMessages: (rideId: string) =>
+    request<RideMessage[]>(`/union/bookings/${rideId}/messages`),
+  sendUnionBookingMessage: (rideId: string, text: string, senderName?: string) =>
+    request<RideMessage>(`/union/bookings/${rideId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text, sender_name: senderName }),
+    }),
+  assignUnionDriver: (rideId: string, driverId: string) =>
+    request<{ success: boolean; message: string; booking?: UnionBooking }>(
+      `/union/bookings/${rideId}/assign`,
+      {
+        method: "POST",
+        body: JSON.stringify({ driver_id: driverId }),
+      }
+    ),
+  updateUnionBookingStatus: (rideId: string, status: string) =>
+    request<{ success: boolean; message: string }>(
+      `/union/bookings/${rideId}/status`,
+      {
+        method: "POST",
+        body: JSON.stringify({ status }),
+      }
+    ),
+  getUnionMembers: (unionId?: string) =>
+    request<{ members: any[] }>(
+      `/union/members?union_id=${encodeURIComponent(unionId || "")}`
+    ),
+
+  // ── GST Invoice APIs ──
+  getInvoices: (unionId?: string, month?: string, year?: string) =>
+    request<{ invoices: GstInvoice[] }>(
+      `/union/invoices?union_id=${encodeURIComponent(unionId || "")}&month=${month || ""}&year=${year || ""}`
+    ),
+  getInvoice: (id: string) =>
+    request<GstInvoice>(`/union/invoices/${id}`),
+  generateInvoice: (rideId: string, unionId?: string) =>
+    request<{ invoice: GstInvoice; already_existed?: boolean }>(
+      `/union/invoices/generate`,
+      { method: "POST", body: JSON.stringify({ ride_id: rideId, union_id: unionId }) }
+    ),
+  getInvoiceStats: (unionId?: string, year?: string) =>
+    request<{ total_invoices: number; total_revenue: number; total_gst_collected: number; total_base_fare: number; pending_bills: number }>(
+      `/union/invoices-stats?union_id=${encodeURIComponent(unionId || "")}&year=${year || ""}`
+    ),
 };
 
 export interface UserProfile {

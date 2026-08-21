@@ -131,17 +131,20 @@ driverRouter.get("/:id/public-profile", (req, res) => {
     tehsil: profile.tehsil,
     village: profile.village,
     standName: profile.stand_name,
+    vehicleCategory: profile.vehicle_category || "CAR",
     vehicleType: profile.vehicle_type,
     vehicleNumber: profile.vehicle_number,
     vehicleMake: profile.vehicle_make,
     vehicleModel: profile.vehicle_model,
     vehicleYear: profile.vehicle_year,
     seats: profile.seats || 4,
+    loadCapacity: profile.load_capacity,
+    hourlyRate: profile.hourly_rate,
     fuelType: profile.fuel_type || "Petrol",
     acAvailable: profile.ac_available === 1,
     avatarPhoto: profile.avatar_photo,
     vehiclePhotos,
-    experience: profile.experience || "Experienced Hill Driver",
+    experience: profile.experience || "Experienced Driver",
     permitZones: profile.permit_zones || "Himachal Pradesh & North India",
     isVerified: profile.is_verified === 1,
     rcVerified: Boolean(profile.rc_photo || profile.vehicle_number),
@@ -177,13 +180,27 @@ driverRouter.patch("/profile", requireAuth, (req: AuthedRequest, res) => {
     stand_name:        z.string().optional().nullable(),
     permit_zones:      z.string().optional().nullable(),
     // Vehicle Details
-    vehicle_type:      z.enum(["HATCHBACK", "SEDAN", "SUV", "LUXURY"]).optional(),
+    vehicle_type:      z.enum([
+      // CAR
+      "HATCHBACK", "SEDAN", "SUV", "LUXURY",
+      // BIKE
+      "BIKE", "ELECTRIC_BIKE",
+      // AUTO
+      "AUTO", "E_RICKSHAW",
+      // GOODS
+      "PICKUP_TRUCK", "MINI_TRUCK", "TEMPO", "TRUCK",
+      // HEAVY
+      "JCB", "TRACTOR", "CRANE", "TIPPER",
+    ]).optional(),
+    vehicle_category:  z.enum(["CAR", "BIKE", "AUTO", "GOODS", "HEAVY"]).optional(),
     vehicle_number:    z.string().min(4).optional(),
     vehicle_make:      z.string().optional().nullable(),
     vehicle_model:     z.string().optional().nullable(),
     vehicle_year:      z.number().int().optional().nullable(),
     seats:             z.number().int().min(2).max(12).optional(),
-    rate_per_km:       z.number().min(10).max(100).optional(),
+    rate_per_km:       z.number().min(1).max(500).optional(),
+    hourly_rate:       z.number().min(50).max(10000).optional().nullable(), // for HEAVY machinery
+    load_capacity:     z.string().optional().nullable(),                     // e.g. "2 Ton"
     fuel_type:         z.string().optional().nullable(),
     ac_available:      z.union([z.boolean(), z.number()]).optional(),
     // Documents & Photos

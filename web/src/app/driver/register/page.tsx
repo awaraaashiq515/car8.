@@ -3,19 +3,39 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { setDriverToken } from "@/lib/api";
+import {
+  setDriverToken,
+  VehicleType, VehicleCategory,
+  CATEGORY_META, VEHICLE_META, VEHICLE_CATEGORY_MAP,
+  BASE_FARE_MAP, DEFAULT_PER_KM_RATE,
+} from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
-type VehicleType = "HATCHBACK" | "SEDAN" | "SUV" | "LUXURY";
 type Stage = 0 | 1 | 2 | 3 | 4; // 0=details, 1=location, 2=vehicle, 3=documents, 4=otp
+type VC = VehicleCategory;
+type VT = VehicleType;
 
-const VEHICLE_OPTIONS: { value: VehicleType; label: string; icon: string; seats: number; desc: string }[] = [
-  { value: "HATCHBACK", label: "Hatchback", icon: "🚗", seats: 4,  desc: "4 seats · Budget rides" },
-  { value: "SEDAN",     label: "Sedan",     icon: "🚙", seats: 4,  desc: "4 seats · Comfortable" },
-  { value: "SUV",       label: "SUV",       icon: "🚕", seats: 6,  desc: "6 seats · Hill roads" },
-  { value: "LUXURY",    label: "Luxury",    icon: "🚘", seats: 4,  desc: "Premium fleet" },
-];
+/** All categories in order */
+const CATEGORIES: VC[] = ["CAR", "BIKE", "AUTO", "GOODS", "HEAVY"];
+
+/** Sub-types per category */
+const CATEGORY_VEHICLES: Record<VC, VT[]> = {
+  CAR:   ["HATCHBACK", "SEDAN", "SUV", "LUXURY"],
+  BIKE:  ["BIKE", "ELECTRIC_BIKE"],
+  AUTO:  ["AUTO", "E_RICKSHAW"],
+  GOODS: ["PICKUP_TRUCK", "MINI_TRUCK", "TEMPO", "TRUCK"],
+  HEAVY: ["JCB", "TRACTOR", "CRANE", "TIPPER"],
+};
+
+/** Default seats per vehicle type */
+const DEFAULT_SEATS: Record<VT, number> = {
+  HATCHBACK: 4, SEDAN: 4, SUV: 6, LUXURY: 4,
+  BIKE: 1, ELECTRIC_BIKE: 1,
+  AUTO: 3, E_RICKSHAW: 3,
+  PICKUP_TRUCK: 2, MINI_TRUCK: 2, TEMPO: 2, TRUCK: 2,
+  JCB: 1, TRACTOR: 1, CRANE: 1, TIPPER: 1,
+};
 
 const PERMIT_ZONES = [
   { id: "HP",          label: "Himachal Pradesh", icon: "🏔️" },
@@ -213,16 +233,22 @@ export default function DriverRegisterPage() {
   const [currentLat,    setCurrentLat]    = useState<number | null>(null);
   const [currentLng,    setCurrentLng]    = useState<number | null>(null);
   // Vehicle
-  const [vehicleType,   setVehicleType]   = useState<VehicleType>("SUV");
-  const [vehicleNumber, setVehicleNumber] = useState("");
-  const [vehicleMake,   setVehicleMake]   = useState("");
-  const [vehicleModel,  setVehicleModel]  = useState("");
-  const [vehicleYear,   setVehicleYear]   = useState<string>("");
-  const [seats,         setSeats]         = useState(6);
-  const [permitZones,   setPermitZones]   = useState<string[]>(["HP"]);
+  const [vehicleCategory, setVehicleCategory] = useState<VC>("CAR");
+  const [vehicleType,     setVehicleType]     = useState<VT>("SUV");
+  const [vehicleNumber,   setVehicleNumber]   = useState("");
+  const [vehicleMake,     setVehicleMake]     = useState("");
+  const [vehicleModel,    setVehicleModel]    = useState("");
+  const [vehicleYear,     setVehicleYear]     = useState<string>("");
+  const [seats,           setSeats]           = useState(6);
+  const [loadCapacity,    setLoadCapacity]    = useState("");  // for GOODS
+  const [hourlyRate,      setHourlyRate]      = useState<string>(""); // for HEAVY
+  const [ratePerKm,       setRatePerKm]       = useState<string>(""); // custom rate per km for drivers
+  const [permitZones,     setPermitZones]     = useState<string[]>(["HP"]);
   // Documents
   const [rcPhoto,       setRcPhoto]       = useState("");
   const [aadharPhoto,   setAadharPhoto]   = useState("");
+  const [licensePhoto,  setLicensePhoto]  = useState("");
+  const [vehiclePhoto,  setVehiclePhoto]  = useState("");
   // OTP
   const [devCode,       setDevCode]       = useState<string | null>(null);
   const [code,          setCode]          = useState("");
@@ -242,9 +268,12 @@ export default function DriverRegisterPage() {
       }
       if (params.get("plate")) setVehicleNumber(params.get("plate") || "");
       if (params.get("vehicle")) {
-        const v = params.get("vehicle")?.toUpperCase();
-        if (v === "HATCHBACK" || v === "SEDAN" || v === "SUV" || v === "LUXURY") {
-          setVehicleType(v as VehicleType);
+        const v = params.get("vehicle")?.toUpperCase() as VT | undefined;
+        if (v && v in VEHICLE_CATEGORY_MAP) {
+          setVehicleType(v);
+          const cat = VEHICLE_CATEGORY_MAP[v];
+          setVehicleCategory(cat);
+          setSeats(DEFAULT_SEATS[v] ?? 4);
         }
       }
     }
@@ -298,11 +327,19 @@ export default function DriverRegisterPage() {
           name, phone, city: city || district || "Mandi",
           district, tehsil, village,
           vehicleType, vehicleNumber,
+          vehicleCategory,
           vehicleMake: vehicleMake || undefined,
           vehicleModel: vehicleModel || undefined,
           vehicleYear: vehicleYear ? parseInt(vehicleYear) : undefined,
           seats,
+          loadCapacity: loadCapacity || undefined,
+          hourlyRate: hourlyRate ? parseFloat(hourlyRate) : undefined,
+          ratePerKm: ratePerKm ? parseFloat(ratePerKm) : undefined,
           permitZones: permitZones.join(","),
+          rcPhoto: rcPhoto || undefined,
+          aadharPhoto: aadharPhoto || undefined,
+          licensePhoto: licensePhoto || undefined,
+          vehiclePhoto: vehiclePhoto || undefined,
           currentLat: currentLat ?? undefined,
           currentLng: currentLng ?? undefined,
         }),
@@ -332,13 +369,19 @@ export default function DriverRegisterPage() {
           city: city || district || "Mandi",
           district, tehsil, village,
           vehicleType, vehicleNumber,
+          vehicleCategory,
           vehicleMake: vehicleMake || undefined,
           vehicleModel: vehicleModel || undefined,
           vehicleYear: vehicleYear ? parseInt(vehicleYear) : undefined,
           seats,
+          loadCapacity: loadCapacity || undefined,
+          hourlyRate: hourlyRate ? parseFloat(hourlyRate) : undefined,
+          ratePerKm: ratePerKm ? parseFloat(ratePerKm) : undefined,
           permitZones: permitZones.join(","),
           rcPhoto: rcPhoto || undefined,
           aadharPhoto: aadharPhoto || undefined,
+          licensePhoto: licensePhoto || undefined,
+          vehiclePhoto: vehiclePhoto || undefined,
           currentLat: currentLat ?? undefined,
           currentLng: currentLng ?? undefined,
         }),
@@ -436,7 +479,7 @@ export default function DriverRegisterPage() {
                 className="btn-gradient w-full py-3.5 text-base"
               >Next: Location →</button>
 
-              <p className="text-center text-xs text-muted pt-2 space-y-1">
+              <div className="text-center text-xs text-muted pt-2 space-y-1">
                 <div>
                   Already registered?{" "}
                   <Link href="/driver/login" className="text-blue-light hover:underline font-semibold">Login here</Link>
@@ -445,7 +488,7 @@ export default function DriverRegisterPage() {
                   Or apply only for Union Membership?{" "}
                   <Link href="/union/apply" className="text-amber hover:underline font-semibold font-mono">Apply for Union →</Link>
                 </div>
-              </p>
+              </div>
             </div>
           )}
 
@@ -550,30 +593,235 @@ export default function DriverRegisterPage() {
                 <p className="text-sm text-muted">Tell us about your vehicle and permit zones.</p>
               </div>
 
-              {/* Vehicle type selector */}
+              {/* Vehicle type selector — 2-step */}
               <div>
-                <label className="block font-mono text-[11px] uppercase tracking-wider text-muted mb-2">Vehicle Type</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {VEHICLE_OPTIONS.map((v) => {
-                    const active = vehicleType === v.value;
+                <label className="block font-mono text-[11px] uppercase tracking-wider text-muted mb-2">Vehicle Category</label>
+
+                {/* Step 1 — Category */}
+                <div className="flex gap-2 overflow-x-auto pb-1 mb-3" style={{ scrollbarWidth: "none" }}>
+                  {CATEGORIES.map((cat) => {
+                    const meta = CATEGORY_META[cat];
+                    const active = vehicleCategory === cat;
                     return (
-                      <button key={v.value} type="button"
-                        onClick={() => { setVehicleType(v.value); setSeats(v.seats); }}
-                        className="rounded-2xl border py-3 text-center transition-all duration-200 relative"
+                      <button key={cat} type="button"
+                        onClick={() => {
+                          setVehicleCategory(cat);
+                          const first = CATEGORY_VEHICLES[cat][0];
+                          setVehicleType(first);
+                          setSeats(DEFAULT_SEATS[first] ?? 1);
+                        }}
+                        className="flex-shrink-0 flex flex-col items-center gap-1 rounded-2xl border px-3 py-2.5 min-w-[60px] transition-all duration-200 relative"
                         style={active ? {
-                          background: "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(6,182,212,0.2))",
-                          borderColor: "#2563EB", boxShadow: "0 0 16px rgba(37,99,235,0.3)",
+                          background: `linear-gradient(135deg, ${meta.color}30, ${meta.color}18)`,
+                          borderColor: meta.color,
+                          boxShadow: `0 0 14px ${meta.glow}`,
                         } : { borderColor: "#1A2E45", background: "#0D1B2E" }}
                       >
-                        {active && <div className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full flex items-center justify-center text-[9px] text-white"
-                          style={{ background: "linear-gradient(135deg, #2563EB, #06B6D4)" }}>✓</div>}
-                        <div className="text-2xl mb-1">{v.icon}</div>
-                        <div className={`text-xs font-bold ${active ? "text-blue-light" : "text-white"}`}>{v.label}</div>
-                        <div className="text-[10px] text-muted mt-0.5">{v.desc}</div>
+                        {active && (
+                          <div className="absolute top-1 right-1 h-3.5 w-3.5 rounded-full flex items-center justify-center text-[8px] text-white font-bold"
+                            style={{ background: meta.color }}>✓</div>
+                        )}
+                        <span className="text-xl">{meta.icon}</span>
+                        <span className={`text-[10px] font-bold leading-tight text-center ${active ? "text-white" : "text-muted"}`}>
+                          {meta.label}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
+
+                {/* Step 2 — Sub-type */}
+                <label className="block font-mono text-[11px] uppercase tracking-wider text-muted mb-2">
+                  {CATEGORY_META[vehicleCategory].label} Type
+                </label>
+                <div className="grid gap-2"
+                  style={{ gridTemplateColumns: `repeat(${Math.min(CATEGORY_VEHICLES[vehicleCategory].length, 4)}, 1fr)` }}
+                >
+                  {CATEGORY_VEHICLES[vehicleCategory].map((vt) => {
+                    const meta = VEHICLE_META[vt];
+                    const catMeta = CATEGORY_META[vehicleCategory];
+                    const active = vehicleType === vt;
+                    return (
+                      <button key={vt} type="button"
+                        onClick={() => { setVehicleType(vt); setSeats(DEFAULT_SEATS[vt] ?? 1); }}
+                        className="rounded-2xl border py-3.5 px-1 text-center transition-all duration-200 relative overflow-hidden"
+                        style={active ? {
+                          background: `linear-gradient(135deg, ${catMeta.color}28, ${catMeta.color}15)`,
+                          borderColor: catMeta.color,
+                          boxShadow: `0 0 12px ${catMeta.glow}`,
+                        } : { borderColor: "#1A2E45", background: "#0D1B2E" }}
+                      >
+                        {active && (
+                          <div className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full flex items-center justify-center text-[9px] text-white font-bold"
+                            style={{ background: catMeta.color }}>✓</div>
+                        )}
+                        <div className="text-2xl mb-1">{meta.icon}</div>
+                        <div className={`text-[11px] font-bold leading-tight ${active ? "text-white" : "text-slate-300"}`}>{meta.label}</div>
+                        <div className="text-[10px] text-muted mt-1 font-mono">{meta.seats}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* ── Professional Pricing & Live Fare Breakdown Preview ── */}
+                {(() => {
+                  const baseFare = BASE_FARE_MAP[vehicleCategory] ?? 50;
+                  const defaultRate = DEFAULT_PER_KM_RATE[vehicleType] ?? 18;
+                  const customNum = vehicleCategory === "HEAVY"
+                    ? (hourlyRate ? parseFloat(hourlyRate) : 0)
+                    : (ratePerKm ? parseFloat(ratePerKm) : 0);
+                  const activeRate = customNum > 0 ? customNum : defaultRate;
+
+                  return (
+                    <div className="mt-4 p-4 rounded-2xl border border-navy-border bg-navy-card/90 space-y-3.5 shadow-lg">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11px] uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1.5">
+                          <span>💰</span> Fare & Rate Settings
+                        </span>
+                        <span className="text-[10px] text-muted bg-navy-deep px-2 py-0.5 rounded-full border border-navy-border font-mono">
+                          Editable Anytime
+                        </span>
+                      </div>
+
+                      {/* Standard Recommended Info Pill */}
+                      <div className="p-2.5 rounded-xl bg-navy-deep border border-blue-primary/20 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 text-muted">
+                          <span>💡</span>
+                          <span>Standard {CATEGORY_META[vehicleCategory].label} Rate:</span>
+                        </div>
+                        <div className="font-mono font-bold text-blue-light">
+                          ₹{defaultRate}{vehicleCategory === "HEAVY" ? "/hour" : "/km"}
+                        </div>
+                      </div>
+
+                      {/* Input fields based on category */}
+                      {vehicleCategory === "HEAVY" ? (
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="font-mono text-[11px] uppercase tracking-wider text-white font-medium">
+                              Your Hourly Rate (₹/hr)
+                            </label>
+                            <span className="text-[10px] text-amber-400 font-mono">Machinery Charge</span>
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted font-bold text-sm">₹</span>
+                            <input
+                              type="number"
+                              value={hourlyRate}
+                              onChange={(e) => setHourlyRate(e.target.value)}
+                              placeholder={`e.g. ${defaultRate} (Default: ₹${defaultRate}/hr)`}
+                              className="w-full rounded-xl border border-navy-border bg-navy-deep pl-8 pr-16 py-2.5 text-sm text-white font-medium outline-none focus:border-blue-primary transition-colors placeholder-muted font-mono"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted text-xs font-mono">/ hour</span>
+                          </div>
+                        </div>
+                      ) : vehicleCategory === "GOODS" ? (
+                        <div className="space-y-2.5">
+                          <div className="grid grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block font-mono text-[10px] uppercase tracking-wider text-white mb-1">
+                                Your Rate (₹/km)
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted font-bold text-xs">₹</span>
+                                <input
+                                  type="number"
+                                  value={ratePerKm}
+                                  onChange={(e) => setRatePerKm(e.target.value)}
+                                  placeholder={`e.g. ${defaultRate}`}
+                                  className="w-full rounded-xl border border-navy-border bg-navy-deep pl-7 pr-10 py-2 text-xs text-white outline-none focus:border-blue-primary transition-colors placeholder-muted font-mono"
+                                />
+                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted text-[10px] font-mono">/km</span>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block font-mono text-[10px] uppercase tracking-wider text-white mb-1">
+                                Load Capacity
+                              </label>
+                              <input
+                                type="text"
+                                value={loadCapacity}
+                                onChange={(e) => setLoadCapacity(e.target.value)}
+                                placeholder="e.g. 1.5 Ton"
+                                className="w-full rounded-xl border border-navy-border bg-navy-deep px-3 py-2 text-xs text-white outline-none focus:border-blue-primary transition-colors placeholder-muted"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="font-mono text-[11px] uppercase tracking-wider text-white font-medium">
+                              Your Custom Rate (₹/km)
+                            </label>
+                            <span className="text-[10px] text-muted">
+                              {customNum > 0 ? "Custom Rate Active" : "Using Default"}
+                            </span>
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted font-bold text-sm">₹</span>
+                            <input
+                              type="number"
+                              value={ratePerKm}
+                              onChange={(e) => setRatePerKm(e.target.value)}
+                              placeholder={`e.g. ${defaultRate} (Leave empty for ₹${defaultRate}/km)`}
+                              className="w-full rounded-xl border border-navy-border bg-navy-deep pl-8 pr-14 py-2.5 text-sm text-white font-medium outline-none focus:border-blue-primary transition-colors placeholder-muted font-mono"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted text-xs font-mono">/ km</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── Live Earnings Breakdown / Calculator (Kitne KM par kitna banta hai) ── */}
+                      <div className="pt-2 border-t border-navy-border/60">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-semibold text-white flex items-center gap-1.5">
+                            <span>📊</span> Trip Fare Calculation Preview
+                          </span>
+                          <span className="text-[10px] text-emerald-400 font-mono">
+                            Base: ₹{baseFare} + ₹{activeRate}/{vehicleCategory === "HEAVY" ? "hr" : "km"}
+                          </span>
+                        </div>
+
+                        {vehicleCategory === "HEAVY" ? (
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            {[
+                              { label: "1 Hour", hours: 1 },
+                              { label: "4 Hours (Half Day)", hours: 4 },
+                              { label: "8 Hours (Full Day)", hours: 8 },
+                            ].map((slot) => {
+                              const total = Math.round(activeRate * slot.hours);
+                              return (
+                                <div key={slot.label} className="p-2.5 rounded-xl bg-navy-deep border border-navy-border/80">
+                                  <div className="text-[10px] text-muted font-mono">{slot.label}</div>
+                                  <div className="text-sm font-bold text-amber-400 font-mono mt-0.5">₹{total}</div>
+                                  <div className="text-[9px] text-muted/70 mt-0.5">{slot.hours}h × ₹{activeRate}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-1.5 text-center">
+                            {[5, 10, 25, 50].map((km) => {
+                              const total = Math.round(baseFare + activeRate * km);
+                              return (
+                                <div key={km} className="p-2 rounded-xl bg-navy-deep border border-navy-border/80">
+                                  <div className="text-[10px] font-bold text-muted font-mono">{km} km</div>
+                                  <div className="text-sm font-bold text-emerald-400 font-mono mt-0.5">₹{total}</div>
+                                  <div className="text-[8.5px] text-muted/70 mt-0.5 font-mono">Base+₹{activeRate * km}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <p className="text-[10px] text-muted mt-2 text-center">
+                          Formula: <span className="text-slate-300 font-mono">₹{baseFare} Base</span> + (<span className="text-slate-300 font-mono">Distance × ₹{activeRate}/km</span>). Customer pays this amount directly to you.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Vehicle Registration Number */}
@@ -648,44 +896,118 @@ export default function DriverRegisterPage() {
           )}
 
           {/* ──────── STEP 3: Documents ──────── */}
-          {stage === 3 && (
-            <div className="space-y-4 animate-fade-up">
-              <div>
-                <h2 className="font-display text-xl font-bold text-white mb-1">Documents</h2>
-                <p className="text-sm text-muted">Upload your RC book and Aadhar card for verification.</p>
+          {stage === 3 && (() => {
+            const docConfig = {
+              CAR: {
+                rcLabel: "Car RC Book (Registration Certificate)",
+                rcSublabel: "Upload front side of Car RC Book",
+                licenseLabel: "Driving License (LMV / Commercial)",
+                licenseSublabel: "Upload front side of Driving License",
+                vehiclePhotoLabel: "Car Vehicle Photo",
+                vehiclePhotoSublabel: "Upload clear front or side photo of your car",
+                vehiclePhotoIcon: "🚗",
+              },
+              BIKE: {
+                rcLabel: "Bike / Scooter RC Book",
+                rcSublabel: "Upload two-wheeler RC certificate",
+                licenseLabel: "Driving License (Two-Wheeler / MCWG)",
+                licenseSublabel: "Upload front side of bike license",
+                vehiclePhotoLabel: "Bike / Scooter Photo",
+                vehiclePhotoSublabel: "Upload clear photo of your bike or scooter",
+                vehiclePhotoIcon: "🏍️",
+              },
+              AUTO: {
+                rcLabel: "Auto RC Book & Permit",
+                rcSublabel: "Upload 3-wheeler registration or permit",
+                licenseLabel: "Auto Commercial Driving License",
+                licenseSublabel: "Upload front side of auto driver license",
+                vehiclePhotoLabel: "Auto Rickshaw Photo",
+                vehiclePhotoSublabel: "Upload clear photo of your auto rickshaw",
+                vehiclePhotoIcon: "🛺",
+              },
+              GOODS: {
+                rcLabel: "Goods Vehicle RC & Fitness Certificate",
+                rcSublabel: "Upload commercial vehicle RC or fitness doc",
+                licenseLabel: "Transport / Heavy Commercial License",
+                licenseSublabel: "Upload commercial driving license (HMV / Transport)",
+                vehiclePhotoLabel: "Goods Vehicle Photo (Truck / Tempo / Pickup)",
+                vehiclePhotoSublabel: "Upload photo of your truck, tempo, or pickup",
+                vehiclePhotoIcon: "🚛",
+              },
+              HEAVY: {
+                rcLabel: "Machine RC / Invoice / Ownership Proof",
+                rcSublabel: "Upload machine RC or purchase bill/invoice",
+                licenseLabel: "Machine Operator License / Heavy Certificate",
+                licenseSublabel: "Upload operator license or machinery certificate",
+                vehiclePhotoLabel: "Heavy Machinery Photo (JCB / Tractor / Crane)",
+                vehiclePhotoSublabel: "Upload full clear photo of your heavy machine",
+                vehiclePhotoIcon: "🚜",
+              },
+            }[vehicleCategory];
+
+            return (
+              <div className="space-y-4 animate-fade-up">
+                <div>
+                  <h2 className="font-display text-xl font-bold text-white mb-1">
+                    {CATEGORY_META[vehicleCategory].label} Documents & Photos
+                  </h2>
+                  <p className="text-sm text-muted">
+                    Upload documents and photos for your <strong className="text-cyan-400">{VEHICLE_META[vehicleType].label}</strong>.
+                  </p>
+                </div>
+
+                {/* 1. Vehicle Photo */}
+                <PhotoUpload
+                  label={docConfig.vehiclePhotoLabel}
+                  sublabel={docConfig.vehiclePhotoSublabel}
+                  icon={docConfig.vehiclePhotoIcon}
+                  value={vehiclePhoto}
+                  onChange={setVehiclePhoto}
+                />
+
+                {/* 2. RC Book */}
+                <PhotoUpload
+                  label={docConfig.rcLabel}
+                  sublabel={docConfig.rcSublabel}
+                  icon="📋"
+                  value={rcPhoto}
+                  onChange={setRcPhoto}
+                />
+
+                {/* 3. Driving License / Operator Certificate */}
+                <PhotoUpload
+                  label={docConfig.licenseLabel}
+                  sublabel={docConfig.licenseSublabel}
+                  icon="🪪"
+                  value={licensePhoto}
+                  onChange={setLicensePhoto}
+                />
+
+                {/* 4. Aadhar Card */}
+                <PhotoUpload
+                  label="Aadhar Card (ID Proof)"
+                  sublabel="Upload front side of Aadhar"
+                  icon="🪪"
+                  value={aadharPhoto}
+                  onChange={setAadharPhoto}
+                />
+
+                <div className="rounded-xl border border-blue-primary/20 bg-blue-primary/5 px-4 py-3">
+                  <p className="text-xs text-blue-light">
+                    💡 <strong>Tip:</strong> Uploading your vehicle photo and documents speeds up instant verification and helps customers trust your vehicle.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <button onClick={() => setStage(2)} className="btn-ghost flex-1 py-3">← Back</button>
+                  <button onClick={() => { setError(null); requestOtp(); }} disabled={loading}
+                    className="btn-gradient flex-1 py-3 disabled:opacity-50">
+                    {loading ? "Sending OTP…" : "Send OTP →"}
+                  </button>
+                </div>
               </div>
-
-              <PhotoUpload
-                label="RC Book (Registration Certificate)"
-                sublabel="Upload front page of RC book"
-                icon="📋"
-                value={rcPhoto}
-                onChange={setRcPhoto}
-              />
-
-              <PhotoUpload
-                label="Aadhar Card"
-                sublabel="Upload front side of Aadhar"
-                icon="🪪"
-                value={aadharPhoto}
-                onChange={setAadharPhoto}
-              />
-
-              <div className="rounded-xl border border-blue-primary/20 bg-blue-primary/5 px-4 py-3">
-                <p className="text-xs text-blue-light">
-                  ⚠️ Documents are optional during registration but recommended for fast verification. You can also upload them later from your profile.
-                </p>
-              </div>
-
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setStage(2)} className="btn-ghost flex-1 py-3">← Back</button>
-                <button onClick={() => { setError(null); requestOtp(); }} disabled={loading}
-                  className="btn-gradient flex-1 py-3 disabled:opacity-50">
-                  {loading ? "Sending OTP…" : "Send OTP →"}
-                </button>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ──────── STEP 4: OTP Verification ──────── */}
           {stage === 4 && (

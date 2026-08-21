@@ -612,26 +612,19 @@ export default function DriverDashboard() {
             .then((r) => { if (r) setActiveRide(r); })
             .catch(() => {});
 
-          // Stream Driver Live Moving GPS Location
+          // Initial load location
           if (typeof window !== "undefined" && "geolocation" in navigator) {
-            const handlePos = (pos: GeolocationPosition) => {
-              const lat = pos.coords.latitude;
-              const lng = pos.coords.longitude;
-              setGpsLocation({ lat, lng });
-              driverApi.updateLocation(lat, lng).catch(() => {});
-              setProfile((prev) => prev ? { ...prev, current_lat: lat, current_lng: lng } : prev);
-            };
-
-            navigator.geolocation.getCurrentPosition(handlePos, () => {}, { enableHighAccuracy: true, timeout: 10000 });
-            
-            // Watch continuous position updates as driver moves
-            const watchId = navigator.geolocation.watchPosition(handlePos, () => {}, {
-              enableHighAccuracy: true,
-              maximumAge: 3000,
-              timeout: 10000,
-            });
-
-            return () => navigator.geolocation.clearWatch(watchId);
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                setGpsLocation({ lat, lng });
+                driverApi.updateLocation(lat, lng).catch(() => {});
+                setProfile((prev) => prev ? { ...prev, current_lat: lat, current_lng: lng } : prev);
+              },
+              () => {},
+              { enableHighAccuracy: true, timeout: 5000 }
+            );
           }
         })
         .catch((e: any) => {
@@ -640,6 +633,35 @@ export default function DriverDashboard() {
     }, 100);
     return () => clearTimeout(timer);
   }, []);
+
+  // 📡 5-Second Real-Time Driver GPS Broadcaster (Every 5s)
+  useEffect(() => {
+    if (!profile) return;
+    if (typeof window === "undefined" || !("geolocation" in navigator)) return;
+
+    const broadcastGps = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setGpsLocation({ lat, lng });
+          driverApi.updateLocation(lat, lng).catch(() => {});
+          setProfile((prev) => prev ? { ...prev, current_lat: lat, current_lng: lng } : prev);
+        },
+        (err) => {
+          console.warn("GPS broadcast note:", err.message);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 4500 }
+      );
+    };
+
+    // Immediate ping
+    broadcastGps();
+
+    // Continuous 5-second heartbeat
+    const gpsTimer = setInterval(broadcastGps, 5000);
+    return () => clearInterval(gpsTimer);
+  }, [profile?.id, isOnline]);
 
   const rejectedRidesRef = useRef<Set<string>>(new Set());
 
@@ -894,7 +916,19 @@ export default function DriverDashboard() {
                 <span className="text-navy-border">•</span>
                 <span className="text-cyan-300 font-bold">{profile.vehicle_number}</span>
                 <span className="text-navy-border">•</span>
-                <span>📍 {profile.city}</span>
+                <span>📍 {profile.stand_name || profile.city || "Mandi"}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    driverApi.updateLocation(31.7084, 76.9319).then(() => {
+                      setProfile(prev => prev ? { ...prev, current_lat: 31.7084, current_lng: 76.9319 } : prev);
+                    });
+                  }}
+                  className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 transition-colors"
+                  title="Click to snap location directly to Mandi NH-21 Stand"
+                >
+                  🎯 Mandi NH-21
+                </button>
               </div>
             </div>
 

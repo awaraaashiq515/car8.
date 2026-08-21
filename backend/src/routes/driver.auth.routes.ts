@@ -3,7 +3,7 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import jwt from "jsonwebtoken";
 import { db } from "../lib/db";
-import { CITY_COORDS } from "../services/fare";
+import { CITY_COORDS, PER_KM_RATE, VehicleType } from "../services/fare";
 
 export const driverAuthRouter = Router();
 
@@ -12,23 +12,35 @@ const OTP_TTL_MS  = 5 * 60 * 1000;
 
 // ─── Schema ───────────────────────────────────────────────
 const registerSchema = z.object({
-  name:           z.string().min(2, "Name must be at least 2 characters"),
-  phone:          z.string().min(8).max(15),
-  city:           z.string().min(2),
-  district:       z.string().min(2).optional(),
-  tehsil:         z.string().min(2).optional(),
-  village:        z.string().optional(),
-  vehicleType:    z.enum(["HATCHBACK", "SEDAN", "SUV", "LUXURY"]),
-  vehicleNumber:  z.string().min(4, "Enter a valid vehicle number"),
-  vehicleMake:    z.string().optional(),
-  vehicleModel:   z.string().optional(),
-  vehicleYear:    z.number().int().optional(),
-  seats:          z.number().int().min(2).max(12).optional(),
-  permitZones:    z.string().optional(), // comma-separated: "HP,Delhi,Chandigarh"
-  rcPhoto:        z.string().optional(), // base64 data URI
-  aadharPhoto:    z.string().optional(), // base64 data URI
-  currentLat:     z.number().optional(),
-  currentLng:     z.number().optional(),
+  name:             z.string().min(2, "Name must be at least 2 characters"),
+  phone:            z.string().min(8).max(15),
+  city:             z.string().min(2),
+  district:         z.string().min(2).optional(),
+  tehsil:           z.string().min(2).optional(),
+  village:          z.string().optional(),
+  vehicleCategory:  z.enum(["CAR", "BIKE", "AUTO", "GOODS", "HEAVY"]).optional(),
+  vehicleType:      z.enum([
+    "HATCHBACK", "SEDAN", "SUV", "LUXURY",
+    "BIKE", "ELECTRIC_BIKE",
+    "AUTO", "E_RICKSHAW",
+    "PICKUP_TRUCK", "MINI_TRUCK", "TEMPO", "TRUCK",
+    "JCB", "TRACTOR", "CRANE", "TIPPER",
+  ]),
+  vehicleNumber:    z.string().min(4, "Enter a valid vehicle number"),
+  vehicleMake:      z.string().optional(),
+  vehicleModel:     z.string().optional(),
+  vehicleYear:      z.number().int().optional(),
+  seats:            z.number().int().min(1).max(12).optional(),
+  loadCapacity:     z.string().optional(),
+  hourlyRate:       z.number().optional(),
+  ratePerKm:        z.number().min(1).max(500).optional(),
+  permitZones:      z.string().optional(), // comma-separated: "HP,Delhi,Chandigarh"
+  rcPhoto:          z.string().optional(), // base64 data URI
+  aadharPhoto:      z.string().optional(), // base64 data URI
+  licensePhoto:     z.string().optional(), // base64 data URI
+  vehiclePhoto:     z.string().optional(), // base64 data URI
+  currentLat:       z.number().optional(),
+  currentLng:       z.number().optional(),
 });
 
 const otpRequestSchema = z.object({ phone: z.string().min(8).max(15) });
@@ -80,9 +92,25 @@ driverAuthRouter.post("/register/verify", (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
   }
-  const { name, phone, city, district, tehsil, village, vehicleType, vehicleNumber,
-          vehicleMake, vehicleModel, vehicleYear, seats, permitZones,
-          rcPhoto, aadharPhoto, currentLat, currentLng, code } = parsed.data;
+  const { name, phone, city, district, tehsil, village,
+          vehicleCategory, vehicleType, vehicleNumber,
+          vehicleMake, vehicleModel, vehicleYear, seats,
+          loadCapacity, hourlyRate, ratePerKm,
+          permitZones, rcPhoto, aadharPhoto, licensePhoto, vehiclePhoto,
+          currentLat, currentLng, code } = parsed.data;
+
+  // Derive vehicle_category from vehicleType if not explicitly provided
+  const VEHICLE_CATEGORY_MAP: Record<string, string> = {
+    HATCHBACK: "CAR", SEDAN: "CAR", SUV: "CAR", LUXURY: "CAR",
+    BIKE: "BIKE", ELECTRIC_BIKE: "BIKE",
+    AUTO: "AUTO", E_RICKSHAW: "AUTO",
+    PICKUP_TRUCK: "GOODS", MINI_TRUCK: "GOODS", TEMPO: "GOODS", TRUCK: "GOODS",
+    JCB: "HEAVY", TRACTOR: "HEAVY", CRANE: "HEAVY", TIPPER: "HEAVY",
+  };
+  const finalCategory = vehicleCategory ?? VEHICLE_CATEGORY_MAP[vehicleType] ?? "CAR";
+  const defaultRate = PER_KM_RATE[vehicleType as VehicleType] || 18;
+  const finalRatePerKm = ratePerKm || defaultRate;
+  const vehiclePhotosJson = vehiclePhoto ? JSON.stringify([vehiclePhoto]) : "[]";
 
   const otp = db.prepare(
     "SELECT * FROM otp_codes WHERE phone = ? AND code = ? AND consumed = 0 ORDER BY created_at DESC LIMIT 1"
@@ -124,32 +152,47 @@ driverAuthRouter.post("/register/verify", (req, res) => {
     db.prepare(
       `INSERT INTO driver_profiles
         (id, user_id, city, district, tehsil, village,
-         vehicle_type, vehicle_number, vehicle_make, vehicle_model, vehicle_year,
-         seats, permit_zones, rc_photo, aadhar_photo,
+         vehicle_category, vehicle_type, vehicle_number,
+         vehicle_make, vehicle_model, vehicle_year,
+         seats, load_capacity, hourly_rate,
+         permit_zones, rc_photo, aadhar_photo, license_photo, vehicle_photos,
          is_verified, is_online, rating_avg, rate_per_km, current_lat, current_lng)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 4.8, 18, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 4.8, ?, ?, ?)`
     ).run(
       nanoid(), user.id,
       city, district || null, tehsil || null, village || null,
-      vehicleType, vehicleNumber, vehicleMake || null, vehicleModel || null, vehicleYear || null,
-      seats || 4, permitZones || "HP",
-      rcPhoto || null, aadharPhoto || null,
+      finalCategory, vehicleType, vehicleNumber,
+      vehicleMake || null, vehicleModel || null, vehicleYear || null,
+      seats || 4, loadCapacity || null, hourlyRate || null,
+      permitZones || "HP",
+      rcPhoto || null, aadharPhoto || null, licensePhoto || null, vehiclePhotosJson,
+      finalRatePerKm,
       finalLat, finalLng
     );
   } else {
     db.prepare(
       `UPDATE driver_profiles
        SET city = ?, district = ?, tehsil = ?, village = ?,
-           vehicle_type = ?, vehicle_number = ?, vehicle_make = ?, vehicle_model = ?, vehicle_year = ?,
-           seats = ?, permit_zones = ?,
-           rc_photo = COALESCE(?, rc_photo), aadhar_photo = COALESCE(?, aadhar_photo),
+           vehicle_category = ?, vehicle_type = ?,
+           vehicle_number = ?, vehicle_make = ?, vehicle_model = ?, vehicle_year = ?,
+           seats = ?, load_capacity = ?, hourly_rate = ?,
+           rate_per_km = COALESCE(?, rate_per_km),
+           permit_zones = ?,
+           rc_photo = COALESCE(?, rc_photo),
+           aadhar_photo = COALESCE(?, aadhar_photo),
+           license_photo = COALESCE(?, license_photo),
+           vehicle_photos = CASE WHEN ? != '[]' THEN ? ELSE vehicle_photos END,
            is_verified = 1, is_online = 1, current_lat = ?, current_lng = ?
        WHERE user_id = ?`
     ).run(
       city, district || null, tehsil || null, village || null,
-      vehicleType, vehicleNumber, vehicleMake || null, vehicleModel || null, vehicleYear || null,
-      seats || 4, permitZones || "HP",
-      rcPhoto || null, aadharPhoto || null,
+      finalCategory, vehicleType,
+      vehicleNumber, vehicleMake || null, vehicleModel || null, vehicleYear || null,
+      seats || 4, loadCapacity || null, hourlyRate || null,
+      ratePerKm || null,
+      permitZones || "HP",
+      rcPhoto || null, aadharPhoto || null, licensePhoto || null,
+      vehiclePhotosJson, vehiclePhotosJson,
       finalLat, finalLng,
       user.id
     );

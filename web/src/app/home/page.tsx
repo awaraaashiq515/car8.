@@ -3,13 +3,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { RideType, VehicleType, clearToken, getUserName, resolvePlaceCoordinates } from "@/lib/api";
+import {
+  api, Union,
+  RideType, VehicleType, VehicleCategory,
+  CATEGORY_META, VEHICLE_META, VEHICLE_CATEGORY_MAP,
+  clearToken, getUserName, resolvePlaceCoordinates
+} from "@/lib/api";
 import LocationInput from "@/components/LocationInput";
 import LocationPermissionModal from "@/components/LocationPermissionModal";
 import { checkLocationPermission, getCurrentCoordinates, reverseGeocode } from "@/lib/geo";
 
 type VT = VehicleType;
 type RT = RideType;
+type VC = VehicleCategory;
 
 const RIDE_TYPES: { value: RT; label: string; icon: string; desc: string }[] = [
   { value: "OUTSTATION", label: "Outstation", icon: "🏔️", desc: "One way / round trip" },
@@ -18,12 +24,17 @@ const RIDE_TYPES: { value: RT; label: string; icon: string; desc: string }[] = [
   { value: "HOURLY",     label: "Hourly",     icon: "⏱️", desc: "Book by hours" },
 ];
 
-const VEHICLES: { value: VT; label: string; icon: string; seats: string; price: string }[] = [
-  { value: "HATCHBACK", label: "Hatchback", icon: "🚗", seats: "4 seats", price: "₹12/km" },
-  { value: "SEDAN",     label: "Sedan",     icon: "🚙", seats: "4 seats", price: "₹15/km" },
-  { value: "SUV",       label: "SUV",       icon: "🚕", seats: "6 seats", price: "₹22/km" },
-  { value: "LUXURY",    label: "Luxury",    icon: "🚘", seats: "Premium", price: "₹35/km" },
-];
+/** All vehicle categories in display order */
+const CATEGORIES: VC[] = ["CAR", "BIKE", "AUTO", "GOODS", "HEAVY"];
+
+/** Sub-types grouped by category */
+const CATEGORY_VEHICLES: Record<VC, VT[]> = {
+  CAR:   ["HATCHBACK", "SEDAN", "SUV", "LUXURY"],
+  BIKE:  ["BIKE", "ELECTRIC_BIKE"],
+  AUTO:  ["AUTO", "E_RICKSHAW"],
+  GOODS: ["PICKUP_TRUCK", "MINI_TRUCK", "TEMPO", "TRUCK"],
+  HEAVY: ["JCB", "TRACTOR", "CRANE", "TIPPER"],
+};
 
 const QUICK_PLACES = [
   { label: "Shimla Bus Stand",   icon: "🏔️" },
@@ -46,14 +57,17 @@ export default function CustomerHomePage() {
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [drop,         setDrop]         = useState("");
   const [dropCoords,   setDropCoords]   = useState<{ lat: number; lng: number } | null>(null);
-  const [rideType,     setRideType]     = useState<RT>("OUTSTATION");
-  const [vehicleType,  setVehicleType]  = useState<VT>("SUV");
-  const [userName,     setUserNameVal]  = useState<string | null>(null);
+  const [rideType,        setRideType]        = useState<RT>("OUTSTATION");
+  const [vehicleCategory, setVehicleCategory] = useState<VC>("CAR");
+  const [vehicleType,     setVehicleType]     = useState<VT>("SUV");
+  const [userName,        setUserNameVal]      = useState<string | null>(null);
   const [showMenu,     setShowMenu]     = useState(false);
   const [error,        setError]        = useState<string | null>(null);
   const [showLocModal, setShowLocModal] = useState(false);
   const [autoLocating, setAutoLocating] = useState(false);
   const [locToast,     setLocToast]     = useState<string | null>(null);
+  const [unions,       setUnions]       = useState<Union[]>([]);
+  const [selectedUnion, setSelectedUnion] = useState<string>("ALL");
 
   useEffect(() => {
     const token = window.localStorage.getItem("cab8_token");
@@ -61,6 +75,13 @@ export default function CustomerHomePage() {
     if (!token) { router.replace("/login"); return; }
     if (role === "DRIVER") { router.replace("/driver/dashboard"); return; }
     setUserNameVal(getUserName());
+
+    // Fetch registered taxi unions
+    api.getUnionsList()
+      .then((res) => {
+        if (res && res.unions) setUnions(res.unions);
+      })
+      .catch(() => {});
 
     // Automatic Ola/Uber style permission check and auto-location fetch
     const initLocation = async () => {
@@ -111,6 +132,9 @@ export default function CustomerHomePage() {
     if (pickup.toLowerCase() === drop.toLowerCase()) { setError("Pickup and drop cannot be the same."); return; }
     setError(null);
     const params = new URLSearchParams({ pickup, drop, rideType, vehicleType });
+    if (selectedUnion && selectedUnion !== "ALL") {
+      params.set("unionId", selectedUnion);
+    }
     if (pickupCoords && pickupCoords.lat && pickupCoords.lng) {
       params.set("pickupLat", pickupCoords.lat.toString());
       params.set("pickupLng", pickupCoords.lng.toString());
@@ -150,7 +174,7 @@ export default function CustomerHomePage() {
       {/* ════════════════════════════════════════
           TOP BAR
       ════════════════════════════════════════ */}
-      <header className="relative z-20 flex items-center justify-between px-5 pt-6 pb-3">
+      <header className="relative z-50 flex items-center justify-between px-5 pt-6 pb-3">
         {/* Logo */}
         <div className="flex items-center gap-2">
           <div className="h-9 w-9 rounded-xl flex items-center justify-center text-lg"
@@ -177,28 +201,35 @@ export default function CustomerHomePage() {
           </button>
 
           {showMenu && (
-            <div className="absolute right-0 top-12 w-52 rounded-2xl border border-navy-border bg-navy-card shadow-2xl z-50 overflow-hidden animate-fade-up"
-              style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.6)" }}>
-              <div className="px-4 py-3 border-b border-navy-border">
-                <p className="text-[11px] text-muted font-mono uppercase tracking-wider">Signed in as</p>
-                <p className="text-sm font-semibold text-white mt-0.5 truncate">{userName || "Customer"}</p>
+            <>
+              {/* Backdrop to close menu when clicking outside */}
+              <div
+                className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
+                onClick={() => setShowMenu(false)}
+              />
+              <div className="absolute right-0 top-12 w-56 rounded-2xl border border-navy-border bg-navy-card shadow-2xl z-50 overflow-hidden animate-fade-up"
+                style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.8)" }}>
+                <div className="px-4 py-3 border-b border-navy-border bg-navy-deep/80">
+                  <p className="text-[11px] text-muted font-mono uppercase tracking-wider">Signed in as</p>
+                  <p className="text-sm font-semibold text-white mt-0.5 truncate">{userName || "Customer"}</p>
+                </div>
+                {[
+                  { href: "/my-rides", icon: "🚕", label: "My Rides" },
+                  { href: "/profile",  icon: "👤", label: "Profile" },
+                ].map((item) => (
+                  <Link key={item.href} href={item.href}
+                    onClick={() => setShowMenu(false)}
+                    className="flex items-center gap-3 px-4 py-3.5 text-sm text-white hover:bg-navy-hover transition-colors">
+                    <span className="text-base">{item.icon}</span> {item.label}
+                  </Link>
+                ))}
+                <div className="border-t border-navy-border" />
+                <button onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-sm text-red hover:bg-red/10 transition-colors">
+                  <span>🚪</span> Logout
+                </button>
               </div>
-              {[
-                { href: "/my-rides", icon: "🚕", label: "My Rides" },
-                { href: "/profile",  icon: "👤", label: "Profile" },
-              ].map((item) => (
-                <Link key={item.href} href={item.href}
-                  onClick={() => setShowMenu(false)}
-                  className="flex items-center gap-3 px-4 py-3.5 text-sm text-white hover:bg-navy-hover transition-colors">
-                  <span className="text-base">{item.icon}</span> {item.label}
-                </Link>
-              ))}
-              <div className="border-t border-navy-border" />
-              <button onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-3.5 text-sm text-red hover:bg-red/10 transition-colors">
-                <span>🚪</span> Logout
-              </button>
-            </div>
+            </>
           )}
         </div>
       </header>
@@ -250,6 +281,56 @@ export default function CustomerHomePage() {
               }}
               placeholder="Search or enter drop location…"
             />
+          </div>
+
+          {/* ── Optional Taxi / Vehicle Union Selector ── */}
+          <div className="mb-4 pt-1">
+            <div className="flex items-center justify-between mb-1.5 px-0.5">
+              <label className="font-mono text-[11px] uppercase tracking-wider text-amber-400 font-bold flex items-center gap-1.5">
+                <span>🔰</span> Book via Taxi Union
+              </label>
+              <span className="text-[10px] text-muted font-mono">Optional</span>
+            </div>
+
+            <div className="relative">
+              <select
+                value={selectedUnion}
+                onChange={(e) => setSelectedUnion(e.target.value)}
+                className="w-full appearance-none rounded-2xl border px-4 py-3 text-xs font-medium outline-none transition-all cursor-pointer"
+                style={
+                  selectedUnion !== "ALL"
+                    ? {
+                        background: "linear-gradient(135deg, rgba(217,119,6,0.18), rgba(245,158,11,0.08))",
+                        borderColor: "#F59E0B",
+                        color: "#FDE68A",
+                        boxShadow: "0 0 16px rgba(245,158,11,0.2)",
+                      }
+                    : {
+                        background: "#0D1B2E",
+                        borderColor: "#1A2E45",
+                        color: "#94A3B8",
+                      }
+                }
+              >
+                <option value="ALL" className="bg-[#0D1B2E] text-white">
+                  🌐 All Verified Fleet (Direct Network & Open Fleet)
+                </option>
+                {unions.map((u) => (
+                  <option key={u.id} value={u.short_code || u.id} className="bg-[#0D1B2E] text-amber-200">
+                    🔰 {u.name} ({u.district})
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-muted text-xs">
+                ▼
+              </div>
+            </div>
+
+            {selectedUnion !== "ALL" && (
+              <p className="text-[10px] text-amber-300/80 mt-1.5 px-1 flex items-center gap-1">
+                <span>✓</span> Bookings for this union stream directly to their verified union dispatch desk.
+              </p>
+            )}
           </div>
 
           {error && (
@@ -324,37 +405,93 @@ export default function CustomerHomePage() {
       </section>
 
       {/* ════════════════════════════════════════
-          VEHICLE SELECTION
+          VEHICLE SELECTION — 2-Step
       ════════════════════════════════════════ */}
       <section className="relative z-10 px-5 pb-5">
-        <h2 className="font-mono text-[11px] uppercase tracking-wider text-muted mb-3">Choose Vehicle</h2>
-        <div className="grid grid-cols-4 gap-2">
-          {VEHICLES.map((v) => {
-            const active = vehicleType === v.value;
+        {/* Step 1 — Category */}
+        <h2 className="font-mono text-[11px] uppercase tracking-wider text-muted mb-3">Vehicle Type</h2>
+        <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          {CATEGORIES.map((cat) => {
+            const meta = CATEGORY_META[cat];
+            const active = vehicleCategory === cat;
             return (
               <button
-                key={v.value}
-                onClick={() => setVehicleType(v.value)}
-                className="rounded-2xl border py-3.5 text-center transition-all duration-200 relative overflow-hidden"
+                key={cat}
+                onClick={() => {
+                  setVehicleCategory(cat);
+                  // Auto-select first sub-type in this category
+                  const firstType = CATEGORY_VEHICLES[cat][0];
+                  setVehicleType(firstType);
+                  // Heavy machinery → Hourly booking by default
+                  if (cat === "HEAVY") { setRideType("HOURLY"); }
+                  else if (rideType === "HOURLY") { setRideType("OUTSTATION"); }
+                }}
+                className="flex-shrink-0 flex flex-col items-center gap-1.5 rounded-2xl border px-4 py-3 min-w-[72px] transition-all duration-200 relative"
                 style={active ? {
-                  background: "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(6,182,212,0.2))",
-                  borderColor: "#2563EB",
-                  boxShadow: "0 0 16px rgba(37,99,235,0.3)",
+                  background: `linear-gradient(135deg, ${meta.color}30, ${meta.color}18)`,
+                  borderColor: meta.color,
+                  boxShadow: `0 0 18px ${meta.glow}`,
                 } : {
                   borderColor: "#1A2E45",
                   background: "#0D1B2E",
                 }}
               >
                 {active && (
-                  <div className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full flex items-center justify-center text-[9px] text-white"
-                    style={{ background: "linear-gradient(135deg, #2563EB, #06B6D4)" }}>✓</div>
+                  <div
+                    className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full flex items-center justify-center text-[9px] text-white font-bold"
+                    style={{ background: meta.color }}
+                  >✓</div>
                 )}
-                <div className="text-2xl mb-1">{v.icon}</div>
-                <div className={`text-xs font-bold ${active ? "text-blue-light" : "text-white"}`}>{v.label}</div>
-                <div className="text-[10px] text-muted mt-0.5">{v.price}</div>
+                <span className="text-2xl">{meta.icon}</span>
+                <span className={`text-[11px] font-bold ${active ? "text-white" : "text-muted"}`}>
+                  {meta.label}
+                </span>
               </button>
             );
           })}
+        </div>
+
+        {/* Step 2 — Sub-type */}
+        <div className="mt-3">
+          <p className="font-mono text-[11px] uppercase tracking-wider text-muted mb-2">
+            {CATEGORY_META[vehicleCategory].label} Options
+          </p>
+          <div className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${Math.min(CATEGORY_VEHICLES[vehicleCategory].length, 4)}, 1fr)` }}
+          >
+            {CATEGORY_VEHICLES[vehicleCategory].map((vt) => {
+              const meta = VEHICLE_META[vt];
+              const catMeta = CATEGORY_META[vehicleCategory];
+              const active = vehicleType === vt;
+              return (
+                <button
+                  key={vt}
+                  onClick={() => setVehicleType(vt)}
+                  className="rounded-2xl border py-3 text-center transition-all duration-200 relative overflow-hidden"
+                  style={active ? {
+                    background: `linear-gradient(135deg, ${catMeta.color}28, ${catMeta.color}15)`,
+                    borderColor: catMeta.color,
+                    boxShadow: `0 0 14px ${catMeta.glow}`,
+                  } : {
+                    borderColor: "#1A2E45",
+                    background: "#0D1B2E",
+                  }}
+                >
+                  {active && (
+                    <div
+                      className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full flex items-center justify-center text-[9px] text-white font-bold"
+                      style={{ background: catMeta.color }}
+                    >✓</div>
+                  )}
+                  <div className="text-2xl mb-1">{meta.icon}</div>
+                  <div className={`text-[11px] font-bold leading-tight ${active ? "text-white" : "text-slate-300"}`}>
+                    {meta.label}
+                  </div>
+                  <div className="text-[10px] text-muted mt-0.5">{meta.price}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 

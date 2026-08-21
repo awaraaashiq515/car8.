@@ -3,9 +3,22 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { distanceKm, getRoadDistanceKm, estimateFare, VehicleType, RideType, CITY_COORDS } from "../services/fare";
+import { distanceKm, getRoadDistanceKm, estimateFare, VehicleType, RideType, VEHICLE_CATEGORY_MAP, CITY_COORDS } from "../services/fare";
 
 export const ridesRouter = Router();
+
+const VEHICLE_TYPE_ENUM = z.enum([
+  // CAR
+  "HATCHBACK", "SEDAN", "SUV", "LUXURY",
+  // BIKE
+  "BIKE", "ELECTRIC_BIKE",
+  // AUTO
+  "AUTO", "E_RICKSHAW",
+  // GOODS
+  "PICKUP_TRUCK", "MINI_TRUCK", "TEMPO", "TRUCK",
+  // HEAVY
+  "JCB", "TRACTOR", "CRANE", "TIPPER",
+]);
 
 const searchSchema = z.object({
   pickupText: z.string(),
@@ -14,8 +27,9 @@ const searchSchema = z.object({
   dropText: z.string(),
   dropLat: z.number(),
   dropLng: z.number(),
-  vehicleType: z.enum(["HATCHBACK", "SEDAN", "SUV", "LUXURY"]),
+  vehicleType: VEHICLE_TYPE_ENUM,
   rideType: z.enum(["LOCAL", "OUTSTATION", "AIRPORT", "HOURLY"]),
+  unionId: z.string().optional(),
 });
 
 /**
@@ -34,26 +48,56 @@ ridesRouter.post("/search", async (req, res) => {
 
   // Maximum pickup radius in km (drivers must be near the pickup location)
   const MAX_PICKUP_RADIUS_KM = 50;
+  const vehicleCategory = VEHICLE_CATEGORY_MAP[q.vehicleType as VehicleType];
 
-  const drivers = db
-    .prepare(
-      `SELECT dp.id, dp.city, dp.district, dp.tehsil, dp.vehicle_type, dp.vehicle_number,
-              dp.rating_avg, dp.rate_per_km, dp.current_lat, dp.current_lng,
-              dp.vehicle_make, dp.vehicle_model, dp.avatar_photo, dp.total_reviews,
-              u.name
-       FROM driver_profiles dp
-       JOIN users u ON u.id = dp.user_id
-       WHERE dp.is_online = 1
-         AND dp.is_verified = 1
-         AND dp.vehicle_type = ?
-         AND dp.id NOT IN (
-           SELECT DISTINCT driver_id
-           FROM rides
-           WHERE driver_id IS NOT NULL
-             AND status IN ('CONFIRMED', 'DRIVER_ASSIGNED', 'ARRIVED', 'ONGOING')
-         )`
-    )
-    .all(q.vehicleType) as any[];
+  let querySql = `
+    SELECT dp.id, dp.city, dp.district, dp.tehsil, dp.vehicle_type, dp.vehicle_category,
+           dp.vehicle_number, dp.rating_avg, dp.rate_per_km, dp.hourly_rate,
+           dp.current_lat, dp.current_lng, dp.vehicle_make, dp.vehicle_model,
+           dp.avatar_photo, dp.total_reviews, dp.load_capacity, dp.union_id, dp.union_name,
+           u.name
+    FROM driver_profiles dp
+    JOIN users u ON u.id = dp.user_id
+    WHERE dp.is_online = 1
+      AND dp.is_verified = 1
+      AND (dp.vehicle_type = ? OR dp.vehicle_category = ?)
+      AND dp.id NOT IN (
+        SELECT DISTINCT driver_id
+        FROM rides
+        WHERE driver_id IS NOT NULL
+          AND status IN ('CONFIRMED', 'DRIVER_ASSIGNED', 'ARRIVED', 'ONGOING')
+      )
+  `;
+  const queryParams: any[] = [q.vehicleType, vehicleCategory];
+
+  if (q.unionId && q.unionId !== "ALL") {
+    querySql += ` AND (dp.union_id = ? OR dp.district IN (SELECT district FROM unions WHERE id = ? OR short_code = ?))`;
+    queryParams.push(q.unionId, q.unionId, q.unionId);
+  }
+
+  let drivers = db.prepare(querySql).all(...queryParams) as any[];
+
+  // If union filter returned zero drivers, fallback to all available matching drivers
+  if (drivers.length === 0 && q.unionId && q.unionId !== "ALL") {
+    drivers = db.prepare(`
+      SELECT dp.id, dp.city, dp.district, dp.tehsil, dp.vehicle_type, dp.vehicle_category,
+             dp.vehicle_number, dp.rating_avg, dp.rate_per_km, dp.hourly_rate,
+             dp.current_lat, dp.current_lng, dp.vehicle_make, dp.vehicle_model,
+             dp.avatar_photo, dp.total_reviews, dp.load_capacity, dp.union_id, dp.union_name,
+             u.name
+      FROM driver_profiles dp
+      JOIN users u ON u.id = dp.user_id
+      WHERE dp.is_online = 1
+        AND dp.is_verified = 1
+        AND (dp.vehicle_type = ? OR dp.vehicle_category = ?)
+        AND dp.id NOT IN (
+          SELECT DISTINCT driver_id
+          FROM rides
+          WHERE driver_id IS NOT NULL
+            AND status IN ('CONFIRMED', 'DRIVER_ASSIGNED', 'ARRIVED', 'ONGOING')
+        )
+    `).all(q.vehicleType, vehicleCategory) as any[];
+  }
 
   const results = drivers
     .map((d) => {
@@ -84,25 +128,17 @@ ridesRouter.post("/search", async (req, res) => {
         vehicleModel: d.vehicle_model,
         avatarPhoto: d.avatar_photo,
         ratingAvg: d.rating_avg,
-        totalReviews: d.total_reviews || 0,
-        pickupDistanceKm,
-        etaMinutes,
+        totalReviews: d.total_reviews,
+        ratePerKm: d.rate_per_km,
+        loadCapacity: d.load_capacity,
+        unionId: d.union_id,
+        unionName: d.union_name,
+        pickupDistanceKm: Math.round(pickupDistanceKm * 10) / 10,
         fare,
+        etaMinutes,
       };
     })
-    .filter((d) => {
-      // Proximity check: Driver must be within pickup radius (50km)
-      // or their registered city/tehsil must be mentioned in the pickup text
-      const cityMatch = d.city && q.pickupText.toLowerCase().includes(d.city.toLowerCase());
-      return d.pickupDistanceKm <= MAX_PICKUP_RADIUS_KM || cityMatch;
-    })
-    .sort((a, b) => {
-      // Primary sort: Drivers whose registered city matches pickup location come first
-      const aMatch = q.pickupText.toLowerCase().includes(a.city.toLowerCase()) ? 0 : 1;
-      const bMatch = q.pickupText.toLowerCase().includes(b.city.toLowerCase()) ? 0 : 1;
-      if (aMatch !== bMatch) return aMatch - bMatch;
-      return a.pickupDistanceKm - b.pickupDistanceKm;
-    })
+    .sort((a, b) => a.pickupDistanceKm - b.pickupDistanceKm)
     .slice(0, 10);
 
   return res.json({
@@ -114,6 +150,8 @@ ridesRouter.post("/search", async (req, res) => {
 
 const bookSchema = searchSchema.extend({
   driverId: z.string().optional(),
+  unionId: z.string().optional(),
+  unionName: z.string().optional(),
   scheduledAt: z.string().datetime().optional(),
 });
 
@@ -132,6 +170,9 @@ ridesRouter.post("/", requireAuth, async (req: AuthedRequest, res) => {
   const tripKm = await getRoadDistanceKm(b.pickupLat, b.pickupLng, b.dropLat, b.dropLng);
 
   let driverRate: number | undefined;
+  let unionIdToSave = b.unionId && b.unionId !== "ALL" ? b.unionId : null;
+  let unionNameToSave = b.unionName || null;
+
   const status = "SEARCHING";
   if (b.driverId) {
     const driver = db
@@ -139,23 +180,40 @@ ridesRouter.post("/", requireAuth, async (req: AuthedRequest, res) => {
       .get(b.driverId) as any;
     if (!driver) return res.status(404).json({ error: "Driver not found" });
     driverRate = driver.rate_per_km;
+    if (!unionIdToSave && driver.union_id) {
+      unionIdToSave = driver.union_id;
+      unionNameToSave = driver.union_name || unionNameToSave;
+    }
+  }
+
+  // If unionId is given without unionName, lookup union name
+  if (unionIdToSave && !unionNameToSave) {
+    const unionRecord = db.prepare("SELECT name FROM unions WHERE id = ? OR short_code = ?").get(unionIdToSave, unionIdToSave) as any;
+    if (unionRecord) {
+      unionNameToSave = unionRecord.name;
+    }
   }
 
   const fare = estimateFare(tripKm, b.vehicleType as VehicleType, b.rideType as RideType, driverRate);
   const id = nanoid();
   const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+  const vehicleCategory = VEHICLE_CATEGORY_MAP[b.vehicleType as VehicleType] ?? "CAR";
 
   db.prepare(
     `INSERT INTO rides
-      (id, customer_id, driver_id, ride_type, vehicle_type, pickup_text, pickup_lat, pickup_lng,
+      (id, customer_id, driver_id, union_id, union_name, ride_type, vehicle_type, vehicle_category,
+       pickup_text, pickup_lat, pickup_lng,
        drop_text, drop_lat, drop_lng, scheduled_at, distance_km, estimated_fare, status, start_otp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     req.userId,
     b.driverId || null,
+    unionIdToSave,
+    unionNameToSave,
     b.rideType,
     b.vehicleType,
+    vehicleCategory,
     b.pickupText,
     b.pickupLat,
     b.pickupLng,

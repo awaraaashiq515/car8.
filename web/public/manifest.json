@@ -2,7 +2,7 @@
   "name": "Cab8 — Verified Taxis",
   "short_name": "Cab8",
   "description": "Book verified taxis for local, outstation, airport and hourly rides. Transparent pricing across Himachal Pradesh & India.",
-  "start_url": "/",
+  "start_url": "/?app=true",
   "display": "standalone",
   "background_color": "#0A1628",
   "theme_color": "#2563EB",

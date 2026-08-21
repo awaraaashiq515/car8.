@@ -4,12 +4,9 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  api, DriverPublicProfile, VehicleType, RideType,
+  api, DriverPublicProfile, VehicleType, VehicleCategory, RideType,
+  CATEGORY_META, VEHICLE_META, VEHICLE_CATEGORY_MAP,
 } from "@/lib/api";
-
-const VEHICLE_ICONS: Record<VehicleType, string> = {
-  HATCHBACK: "🚗", SEDAN: "🚙", SUV: "🚕", LUXURY: "🚘",
-};
 
 function DriverProfileContent() {
   const params = useParams();
@@ -97,7 +94,13 @@ function DriverProfileContent() {
 
   const vehicleName = profile?.vehicleMake
     ? `${profile.vehicleMake} ${profile.vehicleModel || ""}`.trim()
-    : profile?.vehicleType || "Cab";
+    : (profile?.vehicleType || "Vehicle");
+
+  // Category-aware theming
+  const category = (profile?.vehicleCategory ?? VEHICLE_CATEGORY_MAP[profile?.vehicleType as VehicleType] ?? "CAR") as VehicleCategory;
+  const catMeta = CATEGORY_META[category];
+  const vtMeta  = profile ? VEHICLE_META[profile.vehicleType as VehicleType] : null;
+  const vehicleIcon = vtMeta?.icon ?? catMeta?.icon ?? "🚗";
 
   const vehiclePhotos = profile?.vehiclePhotos && profile.vehiclePhotos.length > 0
     ? profile.vehiclePhotos
@@ -442,11 +445,11 @@ function DriverProfileContent() {
           {/* Vehicle Specifications & Amenities */}
           <div className="rounded-3xl p-5 bg-navy-card border border-navy-border space-y-3.5 shadow-xl">
             <h3 className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
-              <span className="text-base">🚗</span> Vehicle Specifications & Amenities
+              <span className="text-base">{vehicleIcon}</span> Vehicle Specifications
             </h3>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="p-3.5 rounded-2xl bg-navy-deep border border-navy-border">
-                <p className="text-muted text-[10px] uppercase font-mono">Vehicle Model</p>
+                <p className="text-muted text-[10px] uppercase font-mono">Vehicle</p>
                 <p className="font-semibold text-white capitalize mt-0.5 truncate">{vehicleName}</p>
               </div>
               <div className="p-3.5 rounded-2xl bg-navy-deep border border-navy-border">
@@ -454,16 +457,38 @@ function DriverProfileContent() {
                 <p className="font-mono font-bold text-cyan-300 mt-0.5">{profile.vehicleNumber}</p>
               </div>
               <div className="p-3.5 rounded-2xl bg-navy-deep border border-navy-border">
-                <p className="text-muted text-[10px] uppercase font-mono">Capacity & Class</p>
-                <p className="font-semibold text-white mt-0.5">
-                  {profile.vehicleType} · {profile.seats || 6} Seater
+                <p className="text-muted text-[10px] uppercase font-mono">Category</p>
+                <p className="font-semibold text-white mt-0.5 flex items-center gap-1.5">
+                  <span>{catMeta.icon}</span>
+                  <span style={{ color: catMeta.color }}>{catMeta.label}</span>
                 </p>
               </div>
               <div className="p-3.5 rounded-2xl bg-navy-deep border border-navy-border">
-                <p className="text-muted text-[10px] uppercase font-mono">Air Conditioning</p>
-                <p className="font-semibold text-emerald-400 mt-0.5">
-                  {profile.acAvailable ? "❄️ AC Available" : "Non-AC"}
-                </p>
+                {/* Show different info based on vehicle category */}
+                {category === "HEAVY" || category === "GOODS" ? (
+                  <>
+                    <p className="text-muted text-[10px] uppercase font-mono">
+                      {category === "HEAVY" ? "Hourly Rate" : "Load Capacity"}
+                    </p>
+                    <p className="font-semibold text-amber-400 mt-0.5">
+                      {category === "HEAVY"
+                        ? profile.hourlyRate ? `₹${profile.hourlyRate}/hr` : `₹${vtMeta?.price ?? "80/hr"}`
+                        : profile.loadCapacity || "Contact driver"}
+                    </p>
+                  </>
+                ) : category === "BIKE" ? (
+                  <>
+                    <p className="text-muted text-[10px] uppercase font-mono">Ride Type</p>
+                    <p className="font-semibold text-white mt-0.5">Solo · Quick Ride</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-muted text-[10px] uppercase font-mono">Air Conditioning</p>
+                    <p className="font-semibold text-emerald-400 mt-0.5">
+                      {profile.acAvailable ? "❄️ AC Available" : "Non-AC"}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>

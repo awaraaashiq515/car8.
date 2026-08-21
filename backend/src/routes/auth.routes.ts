@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import jwt from "jsonwebtoken";
+import https from "https";
 import { db } from "../lib/db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 
@@ -10,28 +11,81 @@ export const authRouter = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const OTP_TTL_MS = 5 * 60 * 1000;
 
-// In a production build, plug in an SMS provider (Twilio Verify, MSG91, etc.)
-// here instead of returning the code in the response. Kept visible in this
-// scaffold purely so the booking flow is testable end-to-end without SMS.
+const AUTHKEY   = process.env.AUTHKEY_API_KEY || "";
+const AUTHKEY_SID = process.env.AUTHKEY_SMS_SID || "";
+
+// Helper: call Authkey 2FA send OTP API — returns logId or throws
+function sendAuthkeyOTP(phone: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = `https://console.authkey.io/restapi/request.php?authkey=${AUTHKEY}&mobile=${phone}&country_code=91&sid=${AUTHKEY_SID}`;
+    https.get(url, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.LogID) resolve(json.LogID as string);
+          else reject(new Error(json.Message || "Authkey OTP send failed"));
+        } catch {
+          reject(new Error("Invalid response from Authkey"));
+        }
+      });
+    }).on("error", reject);
+  });
+}
+
+// Helper: verify OTP using Authkey verify API
+function verifyAuthkeyOTP(logId: string, otp: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const url = `https://console.authkey.io/api/2fa_verify.php?authkey=${AUTHKEY}&channel=SMS&otp=${otp}&logid=${logId}`;
+    https.get(url, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json.status === true);
+        } catch {
+          reject(new Error("Invalid response from Authkey verify"));
+        }
+      });
+    }).on("error", reject);
+  });
+}
 
 const phoneSchema = z.object({ phone: z.string().min(8).max(15) });
 
-authRouter.post("/otp/request", (req, res) => {
+authRouter.post("/otp/request", async (req, res) => {
   const parsed = phoneSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Valid phone number required" });
   }
   const { phone } = parsed.data;
-  const code = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
 
+  // If Authkey is configured, send real SMS OTP
+  if (AUTHKEY && AUTHKEY_SID) {
+    try {
+      const logId = await sendAuthkeyOTP(phone);
+      // Store logId as "code" field so verify route can use it
+      db.prepare(
+        "INSERT INTO otp_codes (id, phone, code, expires_at) VALUES (?, ?, ?, ?)"
+      ).run(nanoid(), phone, `AUTHKEY:${logId}`, expiresAt);
+      return res.json({ message: "OTP sent to your mobile number via SMS" });
+    } catch (err: any) {
+      console.error("Authkey OTP send error:", err);
+      return res.status(500).json({ error: "Failed to send OTP. Please try again." });
+    }
+  }
+
+  // Fallback for local dev (no Authkey configured)
+  const code = String(Math.floor(100000 + Math.random() * 900000));
   db.prepare(
     "INSERT INTO otp_codes (id, phone, code, expires_at) VALUES (?, ?, ?, ?)"
   ).run(nanoid(), phone, code, expiresAt);
-
   return res.json({
     message: "OTP sent",
-    devOnlyCode: code,
+    devOnlyCode: code, // Only shown in dev mode
   });
 });
 
@@ -41,26 +95,7 @@ const verifySchema = z.object({
   name: z.string().optional(),
 });
 
-authRouter.post("/otp/verify", (req, res) => {
-  const parsed = verifySchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "phone, code required" });
-  }
-  const { phone, code, name } = parsed.data;
-
-  const otp = db
-    .prepare(
-      "SELECT * FROM otp_codes WHERE phone = ? AND code = ? AND consumed = 0 ORDER BY created_at DESC LIMIT 1"
-    )
-    .get(phone, code) as any;
-
-  if (!otp) return res.status(401).json({ error: "Invalid code" });
-  if (new Date(otp.expires_at).getTime() < Date.now()) {
-    return res.status(401).json({ error: "Code expired" });
-  }
-
-  db.prepare("UPDATE otp_codes SET consumed = 1 WHERE id = ?").run(otp.id);
-
+function issueToken(phone: string, name: string | undefined, res: any) {
   let user = db.prepare("SELECT * FROM users WHERE phone = ?").get(phone) as any;
   if (!user) {
     const id = nanoid();
@@ -69,11 +104,9 @@ authRouter.post("/otp/verify", (req, res) => {
     ).run(id, phone, name || null);
     user = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
   }
-
   const token = jwt.sign({ sub: user.id, phone: user.phone }, JWT_SECRET, {
     expiresIn: "7d",
   });
-
   return res.json({
     token,
     user: {
@@ -86,6 +119,45 @@ authRouter.post("/otp/verify", (req, res) => {
       role: user.role,
     },
   });
+}
+
+authRouter.post("/otp/verify", (req, res) => {
+  const parsed = verifySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "phone, code required" });
+  }
+  const { phone, code, name } = parsed.data;
+
+  const otp = db
+    .prepare(
+      "SELECT * FROM otp_codes WHERE phone = ? AND consumed = 0 ORDER BY created_at DESC LIMIT 1"
+    )
+    .get(phone) as any;
+
+  if (!otp) return res.status(401).json({ error: "Invalid or expired OTP" });
+  if (new Date(otp.expires_at).getTime() < Date.now()) {
+    return res.status(401).json({ error: "Code expired" });
+  }
+
+  // Authkey 2FA path: logId stored as "AUTHKEY:<logId>"
+  if ((otp.code as string).startsWith("AUTHKEY:")) {
+    const logId = (otp.code as string).replace("AUTHKEY:", "");
+    return verifyAuthkeyOTP(logId, code)
+      .then((valid) => {
+        if (!valid) return res.status(401).json({ error: "Invalid OTP" });
+        db.prepare("UPDATE otp_codes SET consumed = 1 WHERE id = ?").run(otp.id);
+        return issueToken(phone, name, res);
+      })
+      .catch((err) => {
+        console.error("Authkey verify error:", err);
+        return res.status(500).json({ error: "OTP verification failed. Try again." });
+      });
+  }
+
+  // Dev fallback path (no Authkey configured)
+  if (otp.code !== code) return res.status(401).json({ error: "Invalid code" });
+  db.prepare("UPDATE otp_codes SET consumed = 1 WHERE id = ?").run(otp.id);
+  return issueToken(phone, name, res);
 });
 
 // GET /auth/me

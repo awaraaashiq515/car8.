@@ -1,13 +1,52 @@
-export type VehicleType = "HATCHBACK" | "SEDAN" | "SUV" | "LUXURY";
+/** Top-level vehicle categories */
+export type VehicleCategory = "CAR" | "BIKE" | "AUTO" | "GOODS" | "HEAVY";
+
+export type VehicleType =
+  // ── CAR ──────────────────────────────────────
+  | "HATCHBACK" | "SEDAN" | "SUV" | "LUXURY"
+  // ── BIKE ─────────────────────────────────────
+  | "BIKE" | "ELECTRIC_BIKE"
+  // ── AUTO / RICKSHAW ───────────────────────────
+  | "AUTO" | "E_RICKSHAW"
+  // ── GOODS (light & medium trucks / tempo) ─────
+  | "PICKUP_TRUCK" | "MINI_TRUCK" | "TEMPO" | "TRUCK"
+  // ── HEAVY MACHINERY ───────────────────────────
+  | "JCB" | "TRACTOR" | "CRANE" | "TIPPER";
+
 export type RideType = "LOCAL" | "OUTSTATION" | "AIRPORT" | "HOURLY";
 
-const BASE_FARE = 50;
-const PER_KM_RATE: Record<VehicleType, number> = {
-  HATCHBACK: 12,
-  SEDAN: 16,
-  SUV: 22,
-  LUXURY: 35,
+/** Map each VehicleType to its parent VehicleCategory */
+export const VEHICLE_CATEGORY_MAP: Record<VehicleType, VehicleCategory> = {
+  HATCHBACK: "CAR", SEDAN: "CAR", SUV: "CAR", LUXURY: "CAR",
+  BIKE: "BIKE", ELECTRIC_BIKE: "BIKE",
+  AUTO: "AUTO", E_RICKSHAW: "AUTO",
+  PICKUP_TRUCK: "GOODS", MINI_TRUCK: "GOODS", TEMPO: "GOODS", TRUCK: "GOODS",
+  JCB: "HEAVY", TRACTOR: "HEAVY", CRANE: "HEAVY", TIPPER: "HEAVY",
 };
+
+/** Base platform fee per booking (₹) */
+const BASE_FARE: Record<VehicleCategory, number> = {
+  CAR:   50,
+  BIKE:  20,
+  AUTO:  30,
+  GOODS: 80,
+  HEAVY: 200,
+};
+
+/** Default per-km rate — drivers can override via rate_per_km */
+export const PER_KM_RATE: Record<VehicleType, number> = {
+  // CAR
+  HATCHBACK: 12, SEDAN: 16, SUV: 22, LUXURY: 35,
+  // BIKE
+  BIKE: 7, ELECTRIC_BIKE: 6,
+  // AUTO
+  AUTO: 9, E_RICKSHAW: 7,
+  // GOODS
+  PICKUP_TRUCK: 18, MINI_TRUCK: 22, TEMPO: 20, TRUCK: 30,
+  // HEAVY (per hour when HOURLY, otherwise per km)
+  JCB: 80, TRACTOR: 50, CRANE: 100, TIPPER: 60,
+};
+
 const RIDE_TYPE_SURCHARGE: Record<RideType, number> = {
   LOCAL: 0,
   AIRPORT: 100,
@@ -98,8 +137,10 @@ export function estimateFare(
   rideType: RideType,
   driverRatePerKm?: number
 ): number {
+  const category = VEHICLE_CATEGORY_MAP[vehicleType] ?? "CAR";
+  const baseFee = BASE_FARE[category];
   const perKm = driverRatePerKm ?? PER_KM_RATE[vehicleType];
-  const fare = BASE_FARE + km * perKm + RIDE_TYPE_SURCHARGE[rideType];
+  const fare = baseFee + km * perKm + RIDE_TYPE_SURCHARGE[rideType];
   return Math.round(fare);
 }
 

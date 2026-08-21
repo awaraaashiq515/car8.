@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import UnionBottomNav from "@/components/UnionBottomNav";
+import UnionFleetMap, { FleetDriver } from "@/components/UnionFleetMap";
+import { api, VehicleType } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Member {
@@ -92,6 +94,8 @@ export default function UnionMembersPage() {
   const [cityFilter,   setCity]         = useState("ALL");
   const [selected,     setSelected]     = useState<string | null>(null);
   const [members,      setMembers]      = useState<Member[]>([]);
+  const [fleetDrivers, setFleetDrivers] = useState<FleetDriver[]>([]);
+  const [viewMode,     setViewMode]     = useState<"list" | "map">("list");
 
   // Direct Add Modal State (Union Admin)
   const [showAddModal,      setShowAddModal]      = useState(false);
@@ -190,6 +194,36 @@ export default function UnionMembersPage() {
 
       // Only show real approved applicants — no demo/seed data
       setMembers(liveMembers);
+
+      // Fetch verified driver profiles with GPS from backend
+      try {
+        const unionId = window.localStorage.getItem("cab8_union_id") || "HPTU";
+        const res = await api.getUnionMembers(unionId);
+        if (res && res.members) {
+          setFleetDrivers(res.members.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            phone: m.phone,
+            city: m.city,
+            district: m.district,
+            tehsil: m.tehsil,
+            stand_name: m.stand_name,
+            village: m.village,
+            vehicle_type: m.vehicle_type as VehicleType,
+            vehicle_number: m.vehicle_number,
+            vehicle_make: m.vehicle_make,
+            vehicle_model: m.vehicle_model,
+            is_online: m.is_online,
+            rating_avg: m.rating_avg,
+            rate_per_km: m.rate_per_km,
+            current_lat: m.current_lat,
+            current_lng: m.current_lng,
+            avatar_photo: m.avatar_photo,
+          })));
+        }
+      } catch (e) {
+        console.warn("Failed to load driver GPS coordinates:", e);
+      }
     }
 
     loadLiveApproved();
@@ -269,43 +303,93 @@ export default function UnionMembersPage() {
           </div>
         </div>
 
-        {/* Search */}
-        <div style={{ position: "relative", marginBottom: 12, animation: "fadeUp 0.4s ease both", animationDelay: "60ms" }}>
-          <span style={{
-            position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-            fontSize: 16, pointerEvents: "none",
-          }}>🔍</span>
-          <input
-            type="text"
-            placeholder="Search by name, phone, plate, city…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="search-inp"
-          />
+        {/* View Mode Toggle: Directory Cards vs Live GPS Radar Map */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
+          background: "#0D1B2E", padding: 4, borderRadius: 14,
+          border: "1px solid #1A2E45", marginBottom: 14,
+        }}>
+          <button
+            onClick={() => setViewMode("list")}
+            style={{
+              padding: "8px 12px", borderRadius: 10, border: "none",
+              fontSize: 11, fontWeight: 700, fontFamily: "var(--font-display)",
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              background: viewMode === "list" ? "linear-gradient(135deg, #D97706, #F59E0B)" : "transparent",
+              color: viewMode === "list" ? "#1A0A00" : "#94A3B8",
+              boxShadow: viewMode === "list" ? "0 4px 14px rgba(245,158,11,0.3)" : "none",
+              transition: "all 0.2s",
+            }}
+          >
+            <span>📋</span>
+            <span>Cards ({filtered.length})</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode("map")}
+            style={{
+              padding: "8px 12px", borderRadius: 10, border: "none",
+              fontSize: 11, fontWeight: 700, fontFamily: "var(--font-display)",
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              background: viewMode === "map" ? "linear-gradient(135deg, #059669, #10B981)" : "transparent",
+              color: viewMode === "map" ? "#fff" : "#94A3B8",
+              boxShadow: viewMode === "map" ? "0 4px 14px rgba(16,185,129,0.3)" : "none",
+              transition: "all 0.2s",
+            }}
+          >
+            <span>🗺️</span>
+            <span>Live GPS Map ({fleetDrivers.length})</span>
+          </button>
         </div>
 
-        {/* Status Filter */}
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8, animation: "fadeUp 0.4s ease both", animationDelay: "100ms" }} className="scrollbar-hide">
-          {["ALL", "ACTIVE", "SUSPENDED", "PENDING"].map(s => (
-            <button key={s} className={`filter-pill ${statusFilter === s ? "active" : ""}`} onClick={() => setStatus(s)}>
-              {s === "ALL" ? "All Status" : s === "ACTIVE" ? "✓ Active" : s === "SUSPENDED" ? "✕ Suspended" : "⏳ Pending"}
-            </button>
-          ))}
-        </div>
+        {viewMode === "map" ? (
+          <div style={{ marginBottom: 24, animation: "fadeUp 0.3s ease both" }}>
+            <UnionFleetMap
+              drivers={fleetDrivers}
+              height="460px"
+            />
+          </div>
+        ) : (
+          <>
+            {/* Search */}
+            <div style={{ position: "relative", marginBottom: 12, animation: "fadeUp 0.4s ease both", animationDelay: "60ms" }}>
+              <span style={{
+                position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
+                fontSize: 16, pointerEvents: "none",
+              }}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search by name, phone, plate, city…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="search-inp"
+              />
+            </div>
 
-        {/* Dues + City Filter */}
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 18, animation: "fadeUp 0.4s ease both", animationDelay: "130ms" }} className="scrollbar-hide">
-          {["ALL", "PAID", "DUE", "OVERDUE"].map(d => (
-            <button key={d} className={`filter-pill ${duesFilter === d ? "active" : ""}`} onClick={() => setDues(d)}>
-              {d === "ALL" ? "All Dues" : DUES_STYLES[d]?.label}
-            </button>
-          ))}
-          {cities.slice(1).map(c => (
-            <button key={c} className={`filter-pill ${cityFilter === c ? "active" : ""}`} onClick={() => setCity(cityFilter === c ? "ALL" : c)}>
-              📍 {c}
-            </button>
-          ))}
-        </div>
+            {/* Status Filter */}
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8, animation: "fadeUp 0.4s ease both", animationDelay: "100ms" }} className="scrollbar-hide">
+              {["ALL", "ACTIVE", "SUSPENDED", "PENDING"].map(s => (
+                <button key={s} className={`filter-pill ${statusFilter === s ? "active" : ""}`} onClick={() => setStatus(s)}>
+                  {s === "ALL" ? "All Status" : s === "ACTIVE" ? "✓ Active" : s === "SUSPENDED" ? "✕ Suspended" : "⏳ Pending"}
+                </button>
+              ))}
+            </div>
+
+            {/* Dues + City Filter */}
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 18, animation: "fadeUp 0.4s ease both", animationDelay: "130ms" }} className="scrollbar-hide">
+              {["ALL", "PAID", "DUE", "OVERDUE"].map(d => (
+                <button key={d} className={`filter-pill ${duesFilter === d ? "active" : ""}`} onClick={() => setDues(d)}>
+                  {d === "ALL" ? "All Dues" : DUES_STYLES[d]?.label}
+                </button>
+              ))}
+              {cities.slice(1).map(c => (
+                <button key={c} className={`filter-pill ${cityFilter === c ? "active" : ""}`} onClick={() => setCity(cityFilter === c ? "ALL" : c)}>
+                  📍 {c}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Member Cards */}
         {filtered.length === 0 ? (

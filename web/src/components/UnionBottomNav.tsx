@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { label: "Dashboard", icon: "🏛️", href: "/union/dashboard" },
   { label: "Approve",   icon: "✅", href: "/union/approve"   },
   { label: "Members",   icon: "👥", href: "/union/members"   },
-  { label: "Analytics", icon: "📊", href: "/union/analytics" },
+  { label: "Billing",   icon: "🧾", href: "/union/billing"   },
   { label: "Settings",  icon: "⚙️", href: "/union/profile"   },
 ];
 

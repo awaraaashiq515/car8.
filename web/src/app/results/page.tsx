@@ -8,7 +8,16 @@ import {
 } from "@/lib/api";
 
 const VEHICLE_ICONS: Record<VehicleType, string> = {
+  // CAR
   HATCHBACK: "🚗", SEDAN: "🚙", SUV: "🚕", LUXURY: "🚘",
+  // BIKE
+  BIKE: "🏍️", ELECTRIC_BIKE: "⚡",
+  // AUTO
+  AUTO: "🛺", E_RICKSHAW: "🛺",
+  // GOODS
+  PICKUP_TRUCK: "🛻", MINI_TRUCK: "🚚", TEMPO: "🚐", TRUCK: "🚛",
+  // HEAVY
+  JCB: "🚜", TRACTOR: "🚜", CRANE: "🏗️", TIPPER: "🚧",
 };
 
 function findPlace(label: string | null) {
@@ -607,6 +616,12 @@ function DriverCard({
 
         {/* Chips row */}
         <div className="flex flex-wrap gap-2 mt-3">
+          {driver.unionName && (
+            <div className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-amber-300 text-xs font-semibold">
+              <span>🔰</span>
+              <span>{driver.unionName}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 rounded-xl bg-navy-deep border border-navy-border px-3 py-1.5">
             <span className="text-xs">🕐</span>
             <span className="text-xs text-white font-medium">ETA {driver.etaMinutes} min</span>
@@ -660,6 +675,7 @@ type AcceptState = "waiting" | "accepted" | "cancelled";
 function DriverAcceptanceOverlay({
   rideId,
   driverName,
+  unionName,
   fare,
   vehicleType,
   onCancel,
@@ -667,6 +683,7 @@ function DriverAcceptanceOverlay({
 }: {
   rideId: string;
   driverName: string;
+  unionName?: string;
   fare: number;
   vehicleType: VehicleType;
   onCancel: () => void;
@@ -838,18 +855,27 @@ function DriverAcceptanceOverlay({
               <div className="text-center space-y-1.5">
                 <div className="flex items-center justify-center gap-2">
                   <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
                   </span>
                   <h2 className="font-display text-lg font-extrabold text-white tracking-tight">
-                    Waiting for Driver
+                    {unionName ? "Waiting for Union Dispatch" : "Waiting for Driver"}
                   </h2>
                 </div>
-                <p className="text-sm text-slate-400">
-                  <span className="text-white font-semibold">{driverName}</span>
-                  <span className="text-slate-500"> is reviewing your request</span>
+                <p className="text-sm text-slate-300">
+                  {unionName ? (
+                    <>
+                      <span className="text-amber-400 font-bold">{unionName}</span>
+                      <span className="text-slate-400"> is reviewing your booking & dispatching a driver</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-white font-semibold">{driverName}</span>
+                      <span className="text-slate-500"> is reviewing your request</span>
+                    </>
+                  )}
                 </p>
-                <p className="text-[11px] text-muted font-mono">Please keep this screen open</p>
+                <p className="text-[11px] text-muted font-mono">Live request sent to union desk · Please keep open</p>
               </div>
 
               {/* Fare pill */}
@@ -872,57 +898,64 @@ function DriverAcceptanceOverlay({
                   newMsgFlash ? "ring-2 ring-cyan-400/60" : ""
                 }`}
                 style={{
-                  background: "linear-gradient(135deg, rgba(6,182,212,0.07), rgba(37,99,235,0.05))",
+                  background: "linear-gradient(135deg, rgba(6,182,212,0.08), rgba(37,99,235,0.05))",
                   border: newMsgFlash
-                    ? "1px solid rgba(6,182,212,0.5)"
-                    : "1px solid rgba(6,182,212,0.2)",
+                    ? "1px solid rgba(6,182,212,0.6)"
+                    : "1px solid rgba(6,182,212,0.25)",
                 }}
               >
-                {/* Chat header — tap to expand/collapse */}
+                {/* Chat header button — Always visible toggle */}
                 <button
                   type="button"
                   onClick={() => setChatOpen((v) => !v)}
-                  className="w-full flex items-center gap-2 px-3.5 pt-3 pb-2.5 border-b transition-colors hover:bg-white/5"
-                  style={{ borderColor: "rgba(6,182,212,0.15)" }}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-3 border-b transition-colors hover:bg-white/5"
+                  style={{ borderColor: "rgba(6,182,212,0.18)" }}
                 >
-                  <span className="relative flex h-2 w-2">
-                    <span
-                      className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                      style={{
-                        background: allMessages.length > 0 ? "#22D3EE" : "#6B8CAE",
-                        animationDuration: "1.5s",
-                      }}
-                    />
-                    <span
-                      className="relative inline-flex rounded-full h-2 w-2"
-                      style={{ background: allMessages.length > 0 ? "#22D3EE" : "#6B8CAE" }}
-                    />
-                  </span>
-                  <span className="text-[10px] font-mono font-bold text-cyan-300 uppercase tracking-widest flex-1 text-left">
-                    Chat with Driver
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="relative flex h-2 w-2 flex-shrink-0">
+                      <span
+                        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        style={{
+                          background: allMessages.length > 0 ? "#22D3EE" : "#6B8CAE",
+                          animationDuration: "1.5s",
+                        }}
+                      />
+                      <span
+                        className="relative inline-flex rounded-full h-2 w-2"
+                        style={{ background: allMessages.length > 0 ? "#22D3EE" : "#6B8CAE" }}
+                      />
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-cyan-300 uppercase tracking-wider truncate">
+                      {unionName ? `💬 Chat with ${unionName} Desk` : `💬 Chat with ${driverName}`}
+                    </span>
                     {allMessages.length > 0 && (
-                      <span className="ml-2 text-[9px] font-bold text-cyan-400/80">
-                        ({allMessages.length} msg{allMessages.length !== 1 ? "s" : ""})
+                      <span className="text-[10px] font-bold text-cyan-300 bg-cyan-500/20 border border-cyan-400/30 px-2 py-0.5 rounded-full flex-shrink-0">
+                        {allMessages.length} msg{allMessages.length !== 1 ? "s" : ""}
                       </span>
                     )}
-                  </span>
-                  {newMsgFlash && (
-                    <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/20 border border-cyan-400/40 px-2 py-0.5 rounded-full animate-pulse">
-                      NEW ✉️
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {newMsgFlash && (
+                      <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/20 border border-cyan-400/40 px-2 py-0.5 rounded-full animate-pulse">
+                        NEW ✉️
+                      </span>
+                    )}
+                    <span className="text-xs font-bold text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded-lg">
+                      {chatOpen ? "✕ Hide Chat" : "▼ Open Chat"}
                     </span>
-                  )}
-                  <span className="text-muted text-xs ml-1">{chatOpen ? "▲" : "▼"}</span>
+                  </div>
                 </button>
 
                 {/* Expandable chat body */}
                 {chatOpen && (
                   <>
                     {/* Messages list */}
-                    <div className="px-3 py-3 space-y-2 max-h-[180px] overflow-y-auto">
+                    <div className="px-3 py-2 space-y-2 max-h-[140px] overflow-y-auto">
                       {allMessages.length === 0 && (
-                        <div className="text-center py-4">
-                          <div className="text-2xl mb-1">💬</div>
-                          <p className="text-[11px] text-muted">Say hi to your driver!</p>
+                        <div className="text-center py-3">
+                          <div className="text-xl mb-1">💬</div>
+                          <p className="text-[11px] text-muted">Say hi to your driver or dispatch desk!</p>
                         </div>
                       )}
                       {allMessages.map((msg) => {
@@ -934,7 +967,7 @@ function DriverAcceptanceOverlay({
                           <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"} items-end gap-1.5`}>
                             {!isMine && (
                               <div
-                                className="h-6 w-6 rounded-lg flex items-center justify-center text-xs flex-shrink-0 mb-0.5"
+                                className="h-6 w-6 rounded-lg flex items-center justify-center text-xs flex-shrink-0 mb-0.5 font-bold"
                                 style={{
                                   background: "linear-gradient(135deg, #0E7490, #06B6D430)",
                                   border: "1px solid rgba(6,182,212,0.3)",
@@ -944,11 +977,7 @@ function DriverAcceptanceOverlay({
                               </div>
                             )}
                             <div
-                              className={`max-w-[78%] px-3 py-2 text-xs shadow-md ${
-                                isMine
-                                  ? "rounded-2xl rounded-br-sm text-white"
-                                  : "rounded-2xl rounded-bl-sm text-slate-100"
-                              }`}
+                              className="max-w-[78%] rounded-2xl px-3 py-2 text-xs text-white shadow-sm"
                               style={
                                 isMine
                                   ? { background: "linear-gradient(135deg, #2563EB, #1D4ED8)" }
@@ -986,7 +1015,7 @@ function DriverAcceptanceOverlay({
                           type="button"
                           onClick={() => handleSend(chip)}
                           disabled={sending}
-                          className="text-[10px] font-medium text-slate-300 whitespace-nowrap px-2.5 py-1.5 rounded-full flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
+                          className="text-[10px] font-medium text-slate-300 whitespace-nowrap px-2.5 py-1 rounded-full flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
                           style={{
                             background: "rgba(37,99,235,0.12)",
                             border: "1px solid rgba(37,99,235,0.3)",
@@ -1007,29 +1036,21 @@ function DriverAcceptanceOverlay({
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-                        placeholder="Type a message to driver…"
-                        className="flex-1 rounded-2xl text-xs text-white placeholder-muted/60 px-3.5 py-2.5 focus:outline-none transition-colors"
+                        placeholder="Type message to driver/desk…"
+                        className="flex-1 rounded-xl text-xs text-white placeholder-muted/60 px-3 py-2 focus:outline-none transition-colors"
                         style={{
                           background: "rgba(255,255,255,0.06)",
                           border: "1px solid rgba(255,255,255,0.12)",
-                        }}
-                        onFocus={(e) => {
-                          e.currentTarget.style.borderColor = "rgba(37,99,235,0.5)";
-                        }}
-                        onBlur={(e) => {
-                          e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
                         }}
                       />
                       <button
                         type="button"
                         onClick={() => handleSend()}
                         disabled={!input.trim() || sending}
-                        className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all active:scale-90 disabled:opacity-35 shadow-lg"
+                        className="h-8 w-8 rounded-xl flex items-center justify-center text-xs font-bold transition-all disabled:opacity-30 active:scale-95 flex-shrink-0"
                         style={{
-                          background: input.trim()
-                            ? "linear-gradient(135deg, #2563EB, #06B6D4)"
-                            : "rgba(255,255,255,0.05)",
-                          border: "1px solid rgba(255,255,255,0.1)",
+                          background: "linear-gradient(135deg, #06B6D4, #2563EB)",
+                          color: "#fff",
                         }}
                       >
                         {sending ? (
@@ -1042,13 +1063,31 @@ function DriverAcceptanceOverlay({
                         )}
                       </button>
                     </div>
+
+                    {/* Bottom collapse / minimize bar */}
+                    <div className="px-3 pb-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setChatOpen(false)}
+                        className="text-[11px] text-cyan-400/90 hover:text-cyan-300 font-mono font-semibold py-1 px-3 rounded-lg bg-cyan-400/10 border border-cyan-400/20"
+                      >
+                        ▲ Hide / Minimize Chat
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
 
               {/* Cancel button */}
               <button
-                onClick={onCancel}
+                onClick={async () => {
+                  try {
+                    await api.updateRideStatus(rideId, "CANCELLED");
+                  } catch (e) {
+                    console.error("Cancel ride error:", e);
+                  }
+                  onCancel();
+                }}
                 className="w-full py-3 rounded-2xl text-sm font-semibold text-slate-400 transition-all"
                 style={{
                   border: "1px solid rgba(255,255,255,0.08)",
@@ -1063,7 +1102,7 @@ function DriverAcceptanceOverlay({
                   e.currentTarget.style.color = "";
                 }}
               >
-                Cancel Booking
+                ✕ Cancel Request
               </button>
             </>
           )}
@@ -1120,6 +1159,7 @@ function ResultsContent() {
   const drop        = getPlaceFromParams(params.get("drop"), params.get("dropLat"), params.get("dropLng"));
   const rideType    = (params.get("rideType") as RideType) || "OUTSTATION";
   const vehicleType = (params.get("vehicleType") as VehicleType) || "SUV";
+  const unionId     = params.get("unionId") || undefined;
 
   const [result,  setResult]  = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1131,6 +1171,7 @@ function ResultsContent() {
   const [pendingRide, setPendingRide] = useState<{
     id: string;
     driverName: string;
+    unionName?: string;
     fare: number;
     vehicleType: VehicleType;
   } | null>(null);
@@ -1141,27 +1182,31 @@ function ResultsContent() {
     api.searchRides({
       pickupText: pickup.label, pickupLat: pickup.lat, pickupLng: pickup.lng,
       dropText:   drop.label,   dropLat:   drop.lat,   dropLng:   drop.lng,
-      vehicleType, rideType,
+      vehicleType, rideType, unionId,
     })
       .then(setResult)
       .catch((e) => setError(e.message || "Search failed."))
       .finally(() => setLoading(false));
-  }, [pickup.label, pickup.lat, pickup.lng, drop.label, drop.lat, drop.lng, vehicleType, rideType]);
+  }, [pickup.label, pickup.lat, pickup.lng, drop.label, drop.lat, drop.lng, vehicleType, rideType, unionId]);
 
   async function handleBook(driver: DriverResult) {
     const token = window.localStorage.getItem("cab8_token");
     if (!token) { router.push("/login"); return; }
     setBooking(true); setError(null);
     try {
+      const unionNameToUse = driver.unionName || (unionId ? (driver.unionName || "Taxi Union") : undefined);
       const ride = await api.bookRide({
         pickupText: pickup.label, pickupLat: pickup.lat, pickupLng: pickup.lng,
         dropText:   drop.label,   dropLat:   drop.lat,   dropLng:   drop.lng,
         vehicleType, rideType, driverId: driver.driverId,
+        unionId: driver.unionId || unionId,
+        unionName: unionNameToUse,
       });
-      // Show acceptance waiting overlay instead of immediate redirect
+      // Show acceptance waiting overlay
       setPendingRide({
         id: ride.id,
         driverName: driver.driverName,
+        unionName: unionNameToUse,
         fare: driver.fare,
         vehicleType: driver.vehicleType,
       });
@@ -1172,8 +1217,43 @@ function ResultsContent() {
     }
   }
 
-  function handleCancelAcceptance() {
-    setPendingRide(null);
+  async function handleBookUnionDirect() {
+    const token = window.localStorage.getItem("cab8_token");
+    if (!token) { router.push("/login"); return; }
+    setBooking(true); setError(null);
+    try {
+      const fare = result?.baseFareEstimate || 500;
+      const unionNameToUse = result?.drivers?.[0]?.unionName || (unionId === "HPTU" ? "HP Taxi Union" : "Himachal Taxi Union");
+      const ride = await api.bookRide({
+        pickupText: pickup.label, pickupLat: pickup.lat, pickupLng: pickup.lng,
+        dropText:   drop.label,   dropLat:   drop.lat,   dropLng:   drop.lng,
+        vehicleType, rideType,
+        unionId: unionId,
+        unionName: unionNameToUse,
+      });
+      setPendingRide({
+        id: ride.id,
+        driverName: "Union Dispatch Desk",
+        unionName: unionNameToUse,
+        fare,
+        vehicleType,
+      });
+    } catch (e: any) {
+      setError(e.message || "Booking failed. Please try again.");
+    } finally {
+      setBooking(false);
+    }
+  }
+
+  async function handleCancelAcceptance() {
+    if (pendingRide) {
+      try {
+        await api.updateRideStatus(pendingRide.id, "CANCELLED");
+      } catch (e) {
+        console.error("Cancel ride error:", e);
+      }
+      setPendingRide(null);
+    }
   }
 
   function handleAccepted() {
@@ -1252,6 +1332,47 @@ function ResultsContent() {
 
         {result && !loading && (
           <>
+            {/* ── Union Direct Dispatch Banner (if booked via union) ── */}
+            {unionId && unionId !== "ALL" && (
+              <div
+                className="mb-4 p-4 rounded-2xl border"
+                style={{
+                  background: "linear-gradient(135deg, rgba(217,119,6,0.16), rgba(245,158,11,0.06))",
+                  borderColor: "rgba(245,158,11,0.4)",
+                  boxShadow: "0 0 20px rgba(245,158,11,0.12)",
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-amber-400 font-mono text-xs font-bold uppercase tracking-wider">
+                      <span>🔰</span>
+                      <span>Union Dispatch Desk Booking</span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                      Your booking will be sent directly to the Union Operators Desk to dispatch the nearest verified driver from their fleet.
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-[10px] text-muted font-mono block">EST. FARE</span>
+                    <span className="font-display font-black text-xl text-white">₹{result.baseFareEstimate}</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleBookUnionDirect}
+                  disabled={booking}
+                  className="mt-3 w-full py-3 rounded-xl font-display font-bold text-xs tracking-wider uppercase transition-all shadow-lg"
+                  style={{
+                    background: "linear-gradient(135deg, #D97706, #F59E0B, #FBBF24)",
+                    color: "#1A0A00",
+                  }}
+                >
+                  {booking ? "Sending to Union Desk…" : `⚡ Request Union Dispatch (₹${result.baseFareEstimate}) →`}
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="font-display font-bold text-white">
@@ -1299,6 +1420,7 @@ function ResultsContent() {
         <DriverAcceptanceOverlay
           rideId={pendingRide.id}
           driverName={pendingRide.driverName}
+          unionName={pendingRide.unionName}
           fare={pendingRide.fare}
           vehicleType={pendingRide.vehicleType}
           onCancel={handleCancelAcceptance}

@@ -8,10 +8,27 @@ import DriverBottomNav from "@/components/DriverBottomNav";
 
 // Suggested ranges per vehicle type
 const VEHICLE_RANGES: Record<VehicleType, { min: number; max: number; suggested: number; label: string; icon: string }> = {
-  HATCHBACK: { min: 10, max: 22, suggested: 15, label: "Hatchback",  icon: "🚗" },
-  SEDAN:     { min: 14, max: 28, suggested: 20, label: "Sedan",      icon: "🚙" },
-  SUV:       { min: 18, max: 40, suggested: 25, label: "SUV",        icon: "🚐" },
-  LUXURY:    { min: 28, max: 100, suggested: 40, label: "Luxury",    icon: "🏎️" },
+  // CAR
+  HATCHBACK:    { min: 10, max: 22,   suggested: 15,  label: "Hatchback",    icon: "🚗" },
+  SEDAN:        { min: 14, max: 28,   suggested: 20,  label: "Sedan",        icon: "🚙" },
+  SUV:          { min: 18, max: 40,   suggested: 25,  label: "SUV",          icon: "🚐" },
+  LUXURY:       { min: 28, max: 100,  suggested: 40,  label: "Luxury",       icon: "🏎️" },
+  // BIKE
+  BIKE:         { min: 5,  max: 15,   suggested: 8,   label: "Bike",         icon: "🏍️" },
+  ELECTRIC_BIKE:{ min: 4,  max: 12,   suggested: 7,   label: "E-Bike",       icon: "⚡" },
+  // AUTO
+  AUTO:         { min: 7,  max: 18,   suggested: 10,  label: "Auto",         icon: "🛺" },
+  E_RICKSHAW:   { min: 5,  max: 14,   suggested: 8,   label: "E-Rickshaw",   icon: "🛺" },
+  // GOODS
+  PICKUP_TRUCK: { min: 14, max: 35,   suggested: 20,  label: "Pickup Truck", icon: "🚛" },
+  MINI_TRUCK:   { min: 18, max: 45,   suggested: 25,  label: "Mini Truck",   icon: "🚚" },
+  TEMPO:        { min: 15, max: 40,   suggested: 22,  label: "Tempo",        icon: "🚐" },
+  TRUCK:        { min: 22, max: 60,   suggested: 32,  label: "Truck",        icon: "🚛" },
+  // HEAVY (rates in ₹/hr shown as per-km equivalent for UI)
+  JCB:          { min: 50, max: 200,  suggested: 90,  label: "JCB",          icon: "🚜" },
+  TRACTOR:      { min: 30, max: 120,  suggested: 55,  label: "Tractor",      icon: "🚜" },
+  CRANE:        { min: 80, max: 500,  suggested: 120, label: "Crane",        icon: "🏗️" },
+  TIPPER:       { min: 40, max: 150,  suggested: 65,  label: "Tipper",       icon: "🚧" },
 };
 
 // Ride type surcharges — must match backend fare.ts exactly

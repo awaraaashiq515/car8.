@@ -131,3 +131,33 @@ CREATE TABLE IF NOT EXISTS union_applications (
   source       TEXT NOT NULL DEFAULT 'live',
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ── GST Invoices ─────────────────────────────────────────────────────────────
+-- Auto-generated GST bills for completed rides dispatched via union desk.
+-- HSN/SAC Code 996411 — Taxi / Radio Taxi Services
+-- GST Rate: 5% (No ITC) — CGST 2.5% + SGST 2.5%
+CREATE TABLE IF NOT EXISTS gst_invoices (
+  id              TEXT PRIMARY KEY,
+  invoice_number  TEXT NOT NULL UNIQUE,
+  ride_id         TEXT NOT NULL REFERENCES rides(id),
+  union_id        TEXT,
+  union_name      TEXT,
+  union_gstin     TEXT,
+  union_address   TEXT,
+  customer_name   TEXT,
+  customer_phone  TEXT,
+  driver_name     TEXT,
+  vehicle_number  TEXT,
+  vehicle_type    TEXT,
+  pickup_text     TEXT,
+  drop_text       TEXT,
+  distance_km     REAL,
+  ride_date       TEXT,
+  base_fare       REAL NOT NULL,
+  gst_rate        REAL NOT NULL DEFAULT 5.0,
+  cgst_amount     REAL NOT NULL,
+  sgst_amount     REAL NOT NULL,
+  total_amount    REAL NOT NULL,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Footer from "@/components/Footer";
 
 export default function RootPage() {
   const router = useRouter();
@@ -21,27 +22,35 @@ export default function RootPage() {
       );
       const isStandalone = (
         window.matchMedia("(display-mode: standalone)").matches ||
-        (window.navigator as any).standalone === true
+        (window.navigator as any).standalone === true ||
+        document.referrer.includes("android-app://")
       );
-      const isAppUserAgent = /Capacitor|MobileApp|wv/i.test(navigator.userAgent);
+      const isAppUserAgent = /Capacitor|MobileApp|wv|Android.*Version\/[\d\.]+\s+Chrome/i.test(navigator.userAgent);
+      const urlParams = new URLSearchParams(window.location.search);
       const hasAppQuery = (
-        new URLSearchParams(window.location.search).get("app") === "true" ||
-        new URLSearchParams(window.location.search).get("source") === "app"
+        urlParams.get("app") === "true" ||
+        urlParams.get("source") === "app" ||
+        urlParams.get("mode") === "app" ||
+        urlParams.get("target") === "login"
       );
+      const isStoredAppMode = window.localStorage.getItem("cab8_app_mode") === "true";
 
-      const isApp = isCapacitor || isStandalone || isAppUserAgent || hasAppQuery;
+      const isApp = isCapacitor || isStandalone || isAppUserAgent || hasAppQuery || isStoredAppMode;
 
       if (isApp) {
         setIsInsideApp(true);
-        const token = window.localStorage.getItem("cab8_token");
-        const role  = window.localStorage.getItem("cab8_role");
+        window.localStorage.setItem("cab8_app_mode", "true");
 
-        if (!token) {
-          router.replace("/login");
-        } else if (role === "DRIVER") {
+        const driverToken = window.localStorage.getItem("cab8_driver_token");
+        const customerToken = window.localStorage.getItem("cab8_token");
+        const role = window.localStorage.getItem("cab8_role");
+
+        if (driverToken || role === "DRIVER") {
           router.replace("/driver/dashboard");
-        } else {
+        } else if (customerToken) {
           router.replace("/home");
+        } else {
+          router.replace("/login");
         }
         return;
       }
@@ -394,17 +403,9 @@ export default function RootPage() {
       </main>
 
       {/* ════════════════════════════════════════
-          CLEAN FOOTER
+          MODERN FOOTER
       ════════════════════════════════════════ */}
-      <footer className="relative z-10 border-t border-[#1A2E45]/80 bg-[#050D1A] py-8 text-xs text-slate-500">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-          <div className="flex items-center gap-2">
-            <span className="text-base">🚕</span>
-            <span className="font-display font-bold text-white text-sm">Cab8 Technologies</span>
-          </div>
-          <p>© {new Date().getFullYear()} Cab8. Verified Taxi Transport Network.</p>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
